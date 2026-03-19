@@ -1,5 +1,7 @@
 # Claude / Antigravity Prompt Pack
 
+> **Legacy Reference** — These prompts are now superseded by Claude Code skills (`/extract-course`, `/extract-strategy`, `/score-candidate`, `/pine-architect`), which execute with full project context. Keep this file as reference for manual Claude use outside of Claude Code.
+
 ## Master Synthesis Prompt
 You are my trading systems architect.
 

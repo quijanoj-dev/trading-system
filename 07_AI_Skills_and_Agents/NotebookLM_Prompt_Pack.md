@@ -1,5 +1,7 @@
 # NotebookLM Prompt Pack
 
+> **Legacy Reference** — These prompts are now superseded by the `/sync-notebooklm` Claude Code skill, which automates source uploads with full project context. Keep this file as reference for manual NotebookLM use outside of Claude Code.
+
 ## Prompt 1 — Paid Courses Extraction
 Extract only the actionable trading content from these sources.
 

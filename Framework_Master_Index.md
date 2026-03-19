@@ -41,21 +41,6 @@ Operating principles for the framework.
 ### `Research_Questions_Master.md`
 Master bank of questions to ask across research, systems, risk, and validation.
 
-### `NotebookLM_Prompt_Pack.md`
-Prompt pack designed for NotebookLM as the knowledge brain.
-
-### `Claude_Antigravity_Prompt_Pack.md`
-Prompt pack designed for Claude Opus / Antigravity as the reasoning and synthesis layer.
-
-### `PineScript_Architect_Expert.md`
-Skill file for building, debugging, migrating, and structuring Pine Script.
-
-### `PineScript_Optimization_Expert.md`
-Skill file for performance optimization while preserving logic and parity.
-
-### `PineScript_Strategy_Converter_Expert.md`
-Skill file for converting discretionary chart ideas into Pine strategy-ready rule sets.
-
 ---
 
 ## 3. Folder Guide
@@ -122,18 +107,38 @@ Files:
 
 ---
 
-## 4. Minimal Starting Checklist
-- [ ] Trading profile
-- [ ] Finisher’s Journal goals
-- [ ] Risk philosophy
-- [ ] Indicator inventory
-- [ ] Current system map
-- [ ] first paid course extraction
-- [ ] first external strategy normalization
-- [ ] first NotebookLM summary
-- [ ] first Claude synthesis pass
-- [ ] first candidate system scorecard
+## `08_TradingView_Indicators/`
 
+Purpose:
+Store active Pine Script v6 indicators and archive legacy versions.
+
+Active Indicators:
+- `Market Session Lines.pine` — session time markers
+- `Premarket Levels.pine` — multi-timeframe OHLC reference levels
+- `OTE-OR-HTF-PO3.pine` — Fibonacci OTE + Opening Range + HTF Power of 3
+- `SMC-FVG-ICT-DOB-SH.pine` — BOS/CHoCH + FVG + Order Blocks + Stop Hunt
+- `SMT-CD Divergence.pine` — SMT + Cumulative Delta divergence (configurable delay)
+- `SMT-CDDO-Lag.pine` — classic symmetric pivot divergence (most confirmed)
+- `SMT-CDDO-NoLagGPT.pine` — zero-lag CloseBreak divergence (most filtered)
+- `SMT-CDDO-RT.pine` — zero-lag real-time divergence (simplest)
+
+Subfolders:
+- `Legacy Versions/` — pre-git historical archive (frozen, not tracked in git)
+
+---
+
+## 4. Minimal Starting Checklist
+
+- [x] Trading profile
+- [x] Finisher’s Journal goals
+- [x] Risk philosophy
+- [x] Indicator inventory
+- [ ] Current system map (sections 4-10)
+- [ ] First paid course extraction
+- [ ] First external strategy normalization
+- [ ] First NotebookLM summary
+- [ ] First Claude synthesis pass
+- [ ] First candidate system scorecard
 
 ---
 
