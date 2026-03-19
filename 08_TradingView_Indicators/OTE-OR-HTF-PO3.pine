@@ -1,0 +1,1277 @@
+//@version=6
+indicator("OTE+OR+HTF+PO3", overlay=true,
+         max_lines_count=500, max_boxes_count=500, max_labels_count=500)
+
+// ============================================================================
+// GLOBAL SETTINGS
+// ============================================================================
+var global_futureExtension = input.int(10, "Future Extension (bars)", minval=-200, maxval=500, tooltip="Groups OTE, Opening Range, and PO3 projection")
+
+// ============================================================================
+// MODULE 1: OTE Levels (HTF) – Completely independent
+// ============================================================================
+// --- Group constants ---
+OTE_GROUP = "Optimal Trade Entry (OTE)"
+
+// ----------------------------------------------------------------------------
+// INPUTS (OTE)
+// ----------------------------------------------------------------------------
+ote_mode          = input.string("LIVE", "Mode", options=["LIVE", "BACKTEST"], group=OTE_GROUP)
+
+ote_HTFgroup = "OTE | Higher Timeframe"
+ote_tfHTF         = input.timeframe("60", "Custom Built-In Period (HTF)", group=ote_HTFgroup)
+ote_periodsBack   = input.int(1, "Periods Back (HTF closed bars)", minval=0, group=ote_HTFgroup)
+ote_cloudsOnlyActive = input.bool(true, "Clouds: only draw on active block", group=ote_HTFgroup)
+
+near_group = "OTE | Display Near Plots"
+ote_nearMode    = input.string("Ticks", "Near mode", options=["Ticks", "$"], group=near_group)
+ote_nearTicks   = input.int(6, "Near distance (ticks) (0 = off)", minval=0, group=near_group)
+ote_nearDollars = input.float(50.0, "Near distance ($) (0 = off)", minval=0.0, step=5.0, group=near_group)
+
+// OTE – Styles
+ote_grpLines = "OTE | Line Styles"
+ote_lineWidthDefault = input.int(2, "Line width", minval=1, maxval=5, group=ote_grpLines)
+ote_lineOpacity      = input.int(0, "Line opacity (0 solid → 100 invisible)", minval=0, maxval=100, group=ote_grpLines)
+ote_lineStyleInput   = input.string("Solid", "Line style", options=["Solid", "Dashed", "Dotted"], group=ote_grpLines)
+
+ote_grpClouds = "OTE | Cloud Style"
+ote_cloudFillOpacity   = input.int(85, "Cloud fill opacity (0 solid → 100 invisible)", minval=0, maxval=100, group=ote_grpClouds)
+ote_cloudBorderOpacity = input.int(100, "Cloud border opacity (0 solid → 100 invisible)", minval=0, maxval=100, group=ote_grpClouds)
+
+// OTE – Colors
+ote_colIntegers = input.color(color.white,  "Integers (±1,±2,±3...)", group=ote_grpLines)
+ote_colZero     = input.color(color.lime,   "Level 0",               group=ote_grpLines)
+ote_col0705     = input.color(color.yellow, "0.705 Group",           group=ote_grpLines)
+ote_col0500     = input.color(color.white,  "0.5 Group",             group=ote_grpLines)
+
+ote_cloudFillCol   = input.color(color.gray, "Cloud fill color",   group=ote_grpClouds)
+ote_cloudBorderCol = input.color(color.gray, "Cloud border color", group=ote_grpClouds)
+
+// ----------------------------------------------------------------------------
+// OTE – Style helpers
+// ----------------------------------------------------------------------------
+ote_f_lineStyleFromInput(_s) =>
+    _s == "Dashed" ? line.style_dashed :
+     _s == "Dotted" ? line.style_dotted :
+     line.style_solid
+
+var ote_lineStyleFinal = ote_f_lineStyleFromInput(ote_lineStyleInput)
+
+var color ote_colIntegersOpt = color.new(ote_colIntegers, ote_lineOpacity)
+var color ote_colZeroOpt     = color.new(ote_colZero,     ote_lineOpacity)
+var color ote_col0705Opt     = color.new(ote_col0705,     ote_lineOpacity)
+var color ote_col0500Opt     = color.new(ote_col0500,     ote_lineOpacity)
+
+// OTE – Cached cloud colors (avoid recomputing in loops)
+var color ote_cloudFillCached   = color.new(ote_cloudFillCol,   ote_cloudFillOpacity)
+var color ote_cloudBorderCached = color.new(ote_cloudBorderCol, ote_cloudBorderOpacity)
+
+
+
+// ----------------------------------------------------------------------------
+// OTE – Near distance calculation
+// ----------------------------------------------------------------------------
+ote_f_dollarsToTicks(_dollars) =>
+    _dollars <= 0 ? 0.0 : (_dollars / syminfo.pointvalue) / syminfo.mintick
+
+var ote_nearTicksFinal = ote_nearMode == "Ticks" ? float(ote_nearTicks) : ote_f_dollarsToTicks(ote_nearDollars)
+var ote_nearDist = ote_nearTicksFinal * syminfo.mintick
+
+// ----------------------------------------------------------------------------
+// OTE – Hit helpers (touch + near)
+// ----------------------------------------------------------------------------
+ote_f_hitLevel(level) =>
+    ote_nearTicksFinal > 0 ? (low - ote_nearDist <= level and high + ote_nearDist >= level) : (low <= level and high >= level)
+
+ote_f_hitBand(lo, hi) =>
+    ote_nearTicksFinal > 0 ? (low <= (hi + ote_nearDist) and high >= (lo - ote_nearDist)) : (high >= lo and low <= hi)
+
+// ----------------------------------------------------------------------------
+// OTE – HTF data
+// ----------------------------------------------------------------------------
+[ote_htfH, ote_htfL, ote_htfO, ote_htfC] = request.security(
+     syminfo.tickerid,
+     ote_tfHTF,
+     [high, low, open, close],
+     barmerge.gaps_off,
+     barmerge.lookahead_off
+)
+
+// ----------------------------------------------------------------------------
+// OTE – HTF window
+// ----------------------------------------------------------------------------
+ote_htfStart   = time(ote_tfHTF)
+ote_htfChanged = ta.change(ote_htfStart) != 0
+
+var int ote_htfStartBar = na
+if ote_htfChanged
+    ote_htfStartBar := bar_index
+
+ote_dayStart = time("D")
+ote_isTodayBlock = ote_htfStart >= ote_dayStart
+
+// Número máximo de bloques históricos según el modo (fijos)
+var ote_effectiveHistoryBlocks = ote_mode == "LIVE" ? 24 : 72
+
+// ----------------------------------------------------------------------------
+// OTE – Freeze closed HTF candle values on rollover
+// ----------------------------------------------------------------------------
+var float ote_fh = na
+var float ote_fl = na
+var float ote_fo = na
+var float ote_fc = na
+
+if ote_htfChanged
+    ote_fh := ote_htfH[ote_periodsBack]
+    ote_fl := ote_htfL[ote_periodsBack]
+    ote_fo := ote_htfO[ote_periodsBack]
+    ote_fc := ote_htfC[ote_periodsBack]
+
+if barstate.isfirst
+    ote_fh := na(ote_fh) ? ote_htfH[ote_periodsBack] : ote_fh
+    ote_fl := na(ote_fl) ? ote_htfL[ote_periodsBack] : ote_fl
+    ote_fo := na(ote_fo) ? ote_htfO[ote_periodsBack] : ote_fo
+    ote_fc := na(ote_fc) ? ote_htfC[ote_periodsBack] : ote_fc
+
+ote_rng = ote_fh - ote_fl
+
+ote_drawFromLowToHigh = (ote_fc > ote_fo) or (ote_fc == ote_fo and (ote_fh - ote_fc) < (ote_fc - ote_fl))
+
+ote_fib(level) =>
+    ote_drawFromLowToHigh ? (ote_fh - ote_rng * level) : (ote_fl + ote_rng * level)
+
+// ----------------------------------------------------------------------------
+// OTE – Active trackers (hits)
+// ----------------------------------------------------------------------------
+var float[] ote_activeLvls      = array.new_float()
+var bool[]   ote_activeHits     = array.new_bool()
+
+var float[] ote_activeCloudTop  = array.new_float()
+var float[] ote_activeCloudBot  = array.new_float()
+var bool[]   ote_activeCloudHit = array.new_bool()
+
+ote_f_resetActive() =>
+    array.clear(ote_activeLvls)
+    array.clear(ote_activeHits)
+    array.clear(ote_activeCloudTop)
+    array.clear(ote_activeCloudBot)
+    array.clear(ote_activeCloudHit)
+
+ote_f_addLvl(price) =>
+    array.push(ote_activeLvls, price)
+    array.push(ote_activeHits, false)
+
+ote_f_addCloud(top, bot) =>
+    array.push(ote_activeCloudTop, math.max(top, bot))
+    array.push(ote_activeCloudBot, math.min(top, bot))
+    array.push(ote_activeCloudHit, false)
+
+// ----------------------------------------------------------------------------
+// OTE – Current block objects
+// ----------------------------------------------------------------------------
+var line[] ote_curLines = array.new_line()
+var box[]  ote_curClouds = array.new_box()
+
+ote_f_clearCurObjects() =>
+    array.clear(ote_curLines)
+    array.clear(ote_curClouds)
+
+// ----------------------------------------------------------------------------
+// OTE – History flat storage
+// ----------------------------------------------------------------------------
+var line[] ote_histLines       = array.new_line()
+var box[]  ote_histClouds      = array.new_box()
+
+var int[]  ote_histLineStartIdx  = array.new_int()
+var int[]  ote_histCloudStartIdx = array.new_int()
+
+ote_f_deleteLineRange(int startIdx, int endIdx) =>
+    s = math.max(startIdx, 0)
+    e = math.min(endIdx, array.size(ote_histLines))
+    if e > s
+        for k = e - 1 to s
+            line.delete(array.get(ote_histLines, k))
+            array.remove(ote_histLines, k)
+    e - s
+
+ote_f_deleteBoxRange(int startIdx, int endIdx) =>
+    s = math.max(startIdx, 0)
+    e = math.min(endIdx, array.size(ote_histClouds))
+    if e > s
+        for k = e - 1 to s
+            box.delete(array.get(ote_histClouds, k))
+            array.remove(ote_histClouds, k)
+    e - s
+
+ote_f_shiftStarts(int[] starts, int delta) =>
+    sz = array.size(starts)
+    if sz > 0 and delta != 0
+        for i = 0 to sz - 1
+            array.set(starts, i, array.get(starts, i) - delta)
+
+// ----- OTE – Level fib ratios & cloud pairs (hoisted from init block – OPT #7) -----
+var float[] ote_fibLvlRatios = array.from(
+    -6.0, -5.0, -4.0, -3.0, -2.0, -1.0,  0.0,
+     1.0,  2.0,  3.0,  4.0,  5.0,  6.0,
+    -5.705, -4.705, -3.705, -2.705, -1.705, -0.705,
+     0.705,  1.705,  2.705,  3.705,  4.705,  5.705,
+    -5.5, -4.5, -3.5, -2.5, -1.5, -0.5,
+     0.5,  1.5,  2.5,  3.5,  4.5,  5.5)
+
+var float[] ote_cloudPairs = array.from(
+    -5.618, -5.786, -4.618, -4.786, -3.618, -3.786,
+    -2.618, -2.786, -1.618, -1.786, -0.618, -0.786,
+     0.618,  0.786,  1.618,  1.786,  2.618,  2.786,
+     3.618,  3.786,  4.618,  4.786,  5.618,  5.786)
+
+// OPT #1: Short-circuit flags for hit-detection loops
+var bool ote_allLvlsHit   = false
+var bool ote_allCloudsHit = false
+
+// ----------------------------------------------------------------------------
+// OTE – Init / rollover
+// ----------------------------------------------------------------------------
+ote_needInit = ote_htfChanged or array.size(ote_activeLvls) == 0
+
+if ote_needInit
+    // Final hit-detection pass for the outgoing block (its last bar) – OPT: early-exit already-hit
+    outLsz = array.size(ote_activeLvls)
+    if outLsz > 0
+        for i = 0 to outLsz - 1
+            if array.get(ote_activeHits, i)
+                continue
+            if ote_f_hitLevel(array.get(ote_activeLvls, i))
+                array.set(ote_activeHits, i, true)
+    outCsz = array.size(ote_activeCloudTop)
+    if outCsz > 0
+        for j = 0 to outCsz - 1
+            if array.get(ote_activeCloudHit, j)
+                continue
+            hi = array.get(ote_activeCloudTop, j)
+            lo = array.get(ote_activeCloudBot, j)
+            if ote_f_hitBand(lo, hi)
+                array.set(ote_activeCloudHit, j, true)
+
+    // Finalize previous block into history
+    if array.size(ote_curLines) > 0 or array.size(ote_curClouds) > 0
+        // En modo BACKTEST, eliminar líneas/nubes no tocadas (comportamiento fijo)
+        if ote_mode == "BACKTEST"
+            ahSz = array.size(ote_activeHits)
+            if ahSz > 0
+                for i = ahSz - 1 to 0
+                    if i < array.size(ote_curLines)
+                        hit = array.get(ote_activeHits, i)
+                        if not hit
+                            line.delete(array.get(ote_curLines, i))
+                            array.remove(ote_curLines, i)
+
+            acSz = array.size(ote_activeCloudHit)
+            if acSz > 0
+                for j = acSz - 1 to 0
+                    if j < array.size(ote_curClouds)
+                        chit = array.get(ote_activeCloudHit, j)
+                        if not chit
+                            box.delete(array.get(ote_curClouds, j))
+                            array.remove(ote_curClouds, j)
+
+        ote_storeThisBlock = true
+        if ote_mode == "LIVE"
+            ote_storeThisBlock := ote_isTodayBlock
+
+        if ote_storeThisBlock
+            array.push(ote_histLineStartIdx, array.size(ote_histLines))
+            array.push(ote_histCloudStartIdx, array.size(ote_histClouds))
+
+            // OPT: merged push-to-history + freeze x2 into single loop
+            clSz = array.size(ote_curLines)
+            if clSz > 0
+                for i = 0 to clSz - 1
+                    ln = array.get(ote_curLines, i)
+                    line.set_x2(ln, bar_index)
+                    array.push(ote_histLines, ln)
+
+            ccSz = array.size(ote_curClouds)
+            if ccSz > 0
+                for j = 0 to ccSz - 1
+                    bx = array.get(ote_curClouds, j)
+                    box.set_right(bx, bar_index)
+                    if not ote_cloudsOnlyActive
+                        array.push(ote_histClouds, bx)
+                    else
+                        box.delete(bx)
+        else
+            clSz = array.size(ote_curLines)
+            if clSz > 0
+                for i = 0 to clSz - 1
+                    line.delete(array.get(ote_curLines, i))
+
+            ccSz = array.size(ote_curClouds)
+            if ccSz > 0
+                for j = 0 to ccSz - 1
+                    box.delete(array.get(ote_curClouds, j))
+
+        // Enforce max history blocks
+        while array.size(ote_histLineStartIdx) > ote_effectiveHistoryBlocks
+            oldStart = array.get(ote_histLineStartIdx, 0)
+            oldEnd   = array.size(ote_histLineStartIdx) > 1 ? array.get(ote_histLineStartIdx, 1) : array.size(ote_histLines)
+            array.shift(ote_histLineStartIdx)
+            removed = ote_f_deleteLineRange(oldStart, oldEnd)
+            ote_f_shiftStarts(ote_histLineStartIdx, removed)
+
+        while array.size(ote_histCloudStartIdx) > ote_effectiveHistoryBlocks
+            oldCStart = array.get(ote_histCloudStartIdx, 0)
+            oldCEnd   = array.size(ote_histCloudStartIdx) > 1 ? array.get(ote_histCloudStartIdx, 1) : array.size(ote_histClouds)
+            array.shift(ote_histCloudStartIdx)
+            removedC = ote_f_deleteBoxRange(oldCStart, oldCEnd)
+            ote_f_shiftStarts(ote_histCloudStartIdx, removedC)
+
+    // Reset for new block
+    ote_f_resetActive()
+    ote_f_clearCurObjects()
+    ote_allLvlsHit   := false   // OPT #1: reset short-circuit flags
+    ote_allCloudsHit := false
+
+    // ----- OTE – Build levels via loop (arrays hoisted – OPT #7) -----
+    for i = 0 to array.size(ote_fibLvlRatios) - 1
+        ote_f_addLvl(ote_fib(array.get(ote_fibLvlRatios, i)))
+
+    for i = 0 to (array.size(ote_cloudPairs) / 2) - 1
+        ote_f_addCloud(ote_fib(array.get(ote_cloudPairs, i * 2)), ote_fib(array.get(ote_cloudPairs, i * 2 + 1)))
+
+    // ---- OTE – Draw clouds (active only) ----
+    cTopSz = array.size(ote_activeCloudTop)
+    if cTopSz > 0
+        for j = 0 to cTopSz - 1
+            hi = array.get(ote_activeCloudTop, j)
+            lo = array.get(ote_activeCloudBot, j)
+            bx = box.new(ote_htfStartBar, hi, bar_index + global_futureExtension, lo, xloc=xloc.bar_index,
+                border_color=ote_cloudBorderCached,
+                bgcolor=ote_cloudFillCached)
+            array.push(ote_curClouds, bx)
+
+    // ---- OTE – Draw lines ----
+    lvlSz = array.size(ote_activeLvls)
+    if lvlSz > 0
+        for i = 0 to lvlSz - 1
+            lvl = array.get(ote_activeLvls, i)
+
+            colFinal = ote_colIntegersOpt
+            if i == 6
+                colFinal := ote_colZeroOpt
+            else if i >= 13 and i <= 24
+                colFinal := ote_col0705Opt
+            else if i >= 25
+                colFinal := ote_col0500Opt
+
+            ln = line.new(ote_htfStartBar, lvl, bar_index + global_futureExtension, lvl, xloc=xloc.bar_index, extend=extend.none,
+                color=colFinal, width=ote_lineWidthDefault, style=ote_lineStyleFinal)
+
+            array.push(ote_curLines, ln)
+
+// ----------------------------------------------------------------------------
+// OTE – Update hits during active block (touch + near)
+// ----------------------------------------------------------------------------
+// OPT #1: skip entire loop once all entries already hit
+if not ote_allLvlsHit
+    lsz = array.size(ote_activeLvls)
+    if lsz > 0
+        bool _anyMissedLvl = false
+        for i = 0 to lsz - 1
+            if array.get(ote_activeHits, i)
+                continue
+            _anyMissedLvl := true
+            if ote_f_hitLevel(array.get(ote_activeLvls, i))
+                array.set(ote_activeHits, i, true)
+        if not _anyMissedLvl
+            ote_allLvlsHit := true
+
+if not ote_allCloudsHit
+    csz = array.size(ote_activeCloudTop)
+    if csz > 0
+        bool _anyMissedCld = false
+        for j = 0 to csz - 1
+            if array.get(ote_activeCloudHit, j)
+                continue
+            _anyMissedCld := true
+            hi = array.get(ote_activeCloudTop, j)
+            lo = array.get(ote_activeCloudBot, j)
+            if ote_f_hitBand(lo, hi)
+                array.set(ote_activeCloudHit, j, true)
+        if not _anyMissedCld
+            ote_allCloudsHit := true
+
+
+// ----------------------------------------------------------------------------
+// OTE – Stretch active objects to Future Extension
+// ----------------------------------------------------------------------------
+// OPT: Only stretch on last bar (visual-only update); cached endX
+if barstate.islast
+    endX = bar_index + global_futureExtension
+    clSzS = array.size(ote_curLines)
+    if clSzS > 0
+        for i = 0 to clSzS - 1
+            line.set_x2(array.get(ote_curLines, i), endX)
+    ccSzS = array.size(ote_curClouds)
+    if ccSzS > 0
+        for j = 0 to ccSzS - 1
+            box.set_right(array.get(ote_curClouds, j), endX)
+
+// ============================================================================
+// END OF MODULE 1 (OTE)
+
+// ============================================================================
+
+// ============================================================================
+// MODULE 2: Opening Range (Time Based Levels) – Versión simplificada y robusta
+// ============================================================================
+// --- Group constants ---
+OR_GROUP = "Opening Range Time Based Levels (ORTBL)"
+or_grpAsia   = "ORTBL | Asia"
+or_grpLondon = "ORTBL | London"
+or_grpOR15   = "ORTBL | 15m"
+or_grpSF     = "ORTBL | SF"
+
+// ----------------------------------------------------------------------------
+// OR – INPUTS
+// ----------------------------------------------------------------------------
+or_keepHistory = input.int(40, "Keep Historical Sessions (per level)", minval=1, maxval=200, group=OR_GROUP)
+or_showBalloons   = input.string("Right", "Show Balloons", options=["Left", "Right", "Off"], group=OR_GROUP)
+or_specificLength = input.int(0, "Specific Length (Offset Bars)", minval=0, maxval=500, group=OR_GROUP)
+or_lineOpacity    = input.int(0, "Line Opacity (0 solid → 100 invisible)", minval=0, maxval=100, group=OR_GROUP)
+
+or_asiaStart   = input.int(1800, "Asia Start", minval=0, maxval=2359, group=or_grpAsia)
+or_asiaEnd     = input.int(0,    "Asia End",   minval=0, maxval=2359, group=or_grpAsia)
+
+or_londonStart = input.int(0,    "London Start", minval=0, maxval=2359, group=or_grpLondon)
+or_londonEnd   = input.int(600,  "London End",   minval=0, maxval=2359, group=or_grpLondon)
+
+or_orb15Start  = input.int(930,  "15m Start", minval=0, maxval=2359, group=or_grpOR15)
+or_orb15End    = input.int(945,  "15m End",   minval=0, maxval=2359, group=or_grpOR15)
+
+or_sfStart     = input.int(400,  "SF Start", minval=0, maxval=2359, group=or_grpSF)
+or_sfEnd       = input.int(930,  "SF End",   minval=0, maxval=2359, group=or_grpSF)
+
+// OR – Style inputs
+or_showAsia   = input.bool(true, "Show Levels", group=or_grpAsia)
+or_asiaColor  = input.color(color.yellow, "Color", group=or_grpAsia)
+or_asiaWidth  = input.int(2, "Width", minval=1, maxval=5, group=or_grpAsia)
+or_asiaStyleS = input.string("Solid", "Line Style", options=["Solid", "Dashed", "Dotted"], group=or_grpAsia)
+
+or_showLondon   = input.bool(true, "Show Levels", group=or_grpLondon)
+or_londonColor  = input.color(color.fuchsia, "Color", group=or_grpLondon)
+or_londonWidth  = input.int(2, "Width", minval=1, maxval=5, group=or_grpLondon)
+or_londonStyleS = input.string("Solid", "Line Style", options=["Solid", "Dashed", "Dotted"], group=or_grpLondon)
+
+or_showOR15   = input.bool(true, "Show Levels", group=or_grpOR15)
+or_or15Color  = input.color(color.lime, "Color", group=or_grpOR15)
+or_or15Width  = input.int(2, "Width", minval=1, maxval=5, group=or_grpOR15)
+or_or15StyleS = input.string("Solid", "Line Style", options=["Solid", "Dashed", "Dotted"], group=or_grpOR15)
+
+or_showSF    = input.bool(true, "Show Levels", group=or_grpSF)
+or_sfColor   = input.color(color.orange, "Color", group=or_grpSF)
+or_sfWidth   = input.int(2, "Width", minval=1, maxval=5, group=or_grpSF)
+or_sfStyleS  = input.string("Solid", "Line Style", options=["Solid", "Dashed", "Dotted"], group=or_grpSF)
+
+// ----------------------------------------------------------------------------
+// OR – Cached line styles and colors (avoid recomputing per session-end)
+// ----------------------------------------------------------------------------
+var or_asiaLineSty  = or_asiaStyleS == "Dashed" ? line.style_dashed : or_asiaStyleS == "Dotted" ? line.style_dotted : line.style_solid
+var or_lonLineSty   = or_londonStyleS == "Dashed" ? line.style_dashed : or_londonStyleS == "Dotted" ? line.style_dotted : line.style_solid
+var or_orbLineSty   = or_or15StyleS == "Dashed" ? line.style_dashed : or_or15StyleS == "Dotted" ? line.style_dotted : line.style_solid
+var or_sfLineSty    = or_sfStyleS == "Dashed" ? line.style_dashed : or_sfStyleS == "Dotted" ? line.style_dotted : line.style_solid
+
+var color or_asiaColorCached  = color.new(or_asiaColor,   or_lineOpacity)
+var color or_lonColorCached   = color.new(or_londonColor, or_lineOpacity)
+var color or_orbColorCached   = color.new(or_or15Color,   or_lineOpacity)
+var color or_sfColorCached    = color.new(or_sfColor,     or_lineOpacity)
+
+// ----------------------------------------------------------------------------
+// OR – Helper: convertir HHMM a minutos desde medianoche (NY)
+// ----------------------------------------------------------------------------
+or_militaryToMinutes(militaryTime) =>
+    hh = math.floor(militaryTime / 100)
+    mm = militaryTime % 100
+    hh * 60 + mm
+
+// Minuto actual en NY
+or_nyMin = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+
+// Convertir inputs a minutos (input-derived, computed once)
+var or_asiaStartMin   = or_militaryToMinutes(or_asiaStart)
+var or_asiaEndMin     = or_militaryToMinutes(or_asiaEnd)
+var or_londonStartMin = or_militaryToMinutes(or_londonStart)
+var or_londonEndMin   = or_militaryToMinutes(or_londonEnd)
+var or_orbStartMin    = or_militaryToMinutes(or_orb15Start)
+var or_orbEndMin      = or_militaryToMinutes(or_orb15End)
+var or_sfStartMin     = or_militaryToMinutes(or_sfStart)
+var or_sfEndMin       = or_militaryToMinutes(or_sfEnd)
+
+// ----------------------------------------------------------------------------
+// OR – Función para determinar si estamos en una sesión (considerando cruce de medianoche)
+// ----------------------------------------------------------------------------
+or_isActive(startMin, endMin, nowMin) =>
+    overnight = startMin > endMin
+    overnight ? (nowMin >= startMin or nowMin < endMin) : (nowMin >= startMin and nowMin < endMin)
+
+// ----------------------------------------------------------------------------
+// OR – Variables de estado para cada sesión
+// ----------------------------------------------------------------------------
+var float or_asia_high = na
+var float or_asia_low = na
+var int or_asia_startBar = na
+var bool or_asia_prevActive = false
+
+var float or_london_high = na
+var float or_london_low = na
+var int or_london_startBar = na
+var bool or_london_prevActive = false
+
+var float or_orb_high = na
+var float or_orb_low = na
+var int or_orb_startBar = na
+var bool or_orb_prevActive = false
+
+var float or_sf_high = na
+var float or_sf_low = na
+var int or_sf_startBar = na
+var bool or_sf_prevActive = false
+
+// ----------------------------------------------------------------------------
+// OR – Arrays para líneas históricas
+// ----------------------------------------------------------------------------
+var array<line> or_asiaHighHist = array.new_line()
+var array<line> or_asiaLowHist  = array.new_line()
+var array<line> or_lonHighHist = array.new_line()
+var array<line> or_lonLowHist  = array.new_line()
+var array<line> or_orbHighHist = array.new_line()
+var array<line> or_orbLowHist  = array.new_line()
+var array<line> or_sfHighHist = array.new_line()
+var array<line> or_sfLowHist  = array.new_line()
+
+// ----------------------------------------------------------------------------
+// OR – Función para agregar línea y mantener límite histórico
+// ----------------------------------------------------------------------------
+or_pushAndTrim(arr, ln, limit) =>
+    array.push(arr, ln)
+    if array.size(arr) > limit
+        line old = array.shift(arr)
+        if not na(old)
+            line.delete(old)
+
+// (Removed unused or_deleteAll and or_f_lineStyle — dead code)
+
+// ----------------------------------------------------------------------------
+// OR – Session processing helper (avoids repeating ~35 lines per session)
+// Returns [updatedHigh, updatedLow, updatedStartBar, updatedPrevActive]
+// ----------------------------------------------------------------------------
+or_f_processSession(bool isActive, bool prevActive, bool showFlag,
+                    float hi, float lo, int startBar,
+                    array<line> highHist, array<line> lowHist,
+                    color clr, int wid, string resolvedStyle) =>
+    newHi = hi
+    newLo = lo
+    newStart = startBar
+    if isActive
+        newHi := na(hi) ? high : math.max(hi, high)
+        newLo := na(lo) ? low  : math.min(lo, low)
+        if na(startBar)
+            newStart := bar_index
+            if array.size(highHist) > 0
+                line.set_x2(array.get(highHist, array.size(highHist) - 1), bar_index)
+                line.set_x2(array.get(lowHist,  array.size(lowHist) - 1),  bar_index)
+    else
+        if prevActive and not na(hi) and not na(lo)
+            if showFlag
+                lineH = line.new(bar_index, hi, bar_index + global_futureExtension, hi, color=clr, width=wid, style=resolvedStyle)
+                lineL = line.new(bar_index, lo, bar_index + global_futureExtension, lo, color=clr, width=wid, style=resolvedStyle)
+                or_pushAndTrim(highHist, lineH, or_keepHistory)
+                or_pushAndTrim(lowHist,  lineL, or_keepHistory)
+            newHi := float(na)
+            newLo := float(na)
+            newStart := int(na)
+        // OPT #3: Only stretch on last bar (visual-only update)
+        if not isActive and showFlag and barstate.islast and array.size(highHist) > 0
+            line.set_x2(array.get(highHist, array.size(highHist) - 1), bar_index + global_futureExtension)
+            line.set_x2(array.get(lowHist,  array.size(lowHist) - 1),  bar_index + global_futureExtension)
+    [newHi, newLo, newStart, isActive]
+
+// ----- Process all 4 sessions -----
+asiaActive = or_isActive(or_asiaStartMin, or_asiaEndMin, or_nyMin)
+[_aH, _aL, _aS, _aP] = or_f_processSession(
+    asiaActive, or_asia_prevActive, or_showAsia,
+    or_asia_high, or_asia_low, or_asia_startBar,
+    or_asiaHighHist, or_asiaLowHist,
+    or_asiaColorCached, or_asiaWidth, or_asiaLineSty)
+or_asia_high := _aH, or_asia_low := _aL, or_asia_startBar := _aS, or_asia_prevActive := _aP
+
+londonActive = or_isActive(or_londonStartMin, or_londonEndMin, or_nyMin)
+[_lH, _lL, _lS, _lP] = or_f_processSession(
+    londonActive, or_london_prevActive, or_showLondon,
+    or_london_high, or_london_low, or_london_startBar,
+    or_lonHighHist, or_lonLowHist,
+    or_lonColorCached, or_londonWidth, or_lonLineSty)
+or_london_high := _lH, or_london_low := _lL, or_london_startBar := _lS, or_london_prevActive := _lP
+
+orbActive = or_isActive(or_orbStartMin, or_orbEndMin, or_nyMin)
+[_oH, _oL, _oS, _oP] = or_f_processSession(
+    orbActive, or_orb_prevActive, or_showOR15,
+    or_orb_high, or_orb_low, or_orb_startBar,
+    or_orbHighHist, or_orbLowHist,
+    or_orbColorCached, or_or15Width, or_orbLineSty)
+or_orb_high := _oH, or_orb_low := _oL, or_orb_startBar := _oS, or_orb_prevActive := _oP
+
+sfActive = or_isActive(or_sfStartMin, or_sfEndMin, or_nyMin)
+[_sH, _sL, _sS, _sP] = or_f_processSession(
+    sfActive, or_sf_prevActive, or_showSF,
+    or_sf_high, or_sf_low, or_sf_startBar,
+    or_sfHighHist, or_sfLowHist,
+    or_sfColorCached, or_sfWidth, or_sfLineSty)
+or_sf_high := _sH, or_sf_low := _sL, or_sf_startBar := _sS, or_sf_prevActive := _sP
+
+// ----------------------------------------------------------------------------
+// OR – Balloons (solo en la última barra)
+// OPT #2: Helper to update labels in-place instead of delete/recreate
+// ----------------------------------------------------------------------------
+or_f_labelX(side, offset) => side == "Right" ? (bar_index + offset) : side == "Left" ? (bar_index - offset) : bar_index
+
+or_f_updateBalloon(label lbl, int xPos, float yVal, string txt, string style, color bgCol, color txtCol) =>
+    label result = lbl
+    if na(lbl)
+        result := label.new(xPos, yVal, txt, style=style, color=bgCol, textcolor=txtCol, size=size.small)
+    else
+        label.set_xy(lbl, xPos, yVal)
+        label.set_text(lbl, txt)
+        label.set_style(lbl, style)
+        label.set_color(lbl, bgCol)
+        label.set_textcolor(lbl, txtCol)
+    result
+
+var label or_lblAsiaHigh = na
+var label or_lblAsiaLow  = na
+var label or_lblLondonHigh = na
+var label or_lblLondonLow  = na
+var label or_lblOr15High = na
+var label or_lblOr15Low  = na
+var label or_lblSFHigh = na
+var label or_lblSFLow  = na
+
+if barstate.islast
+    if or_showBalloons == "Off"
+        label.delete(or_lblAsiaHigh), or_lblAsiaHigh := na
+        label.delete(or_lblAsiaLow),  or_lblAsiaLow  := na
+        label.delete(or_lblLondonHigh), or_lblLondonHigh := na
+        label.delete(or_lblLondonLow),  or_lblLondonLow  := na
+        label.delete(or_lblOr15High), or_lblOr15High := na
+        label.delete(or_lblOr15Low),  or_lblOr15Low  := na
+        label.delete(or_lblSFHigh), or_lblSFHigh := na
+        label.delete(or_lblSFLow),  or_lblSFLow  := na
+    else
+        // Calcular offset para globos a la derecha
+        labelOffset = or_specificLength
+        if or_showBalloons == "Right"
+            if or_specificLength > 0 and or_specificLength <= global_futureExtension
+                labelOffset := or_specificLength
+            else
+                labelOffset := global_futureExtension
+        or_labelBar = or_f_labelX(or_showBalloons, labelOffset)
+
+        // Asia
+        if or_showAsia and array.size(or_asiaHighHist) > 0
+            y = line.get_y1(array.get(or_asiaHighHist, array.size(or_asiaHighHist)-1))
+            or_lblAsiaHigh := or_f_updateBalloon(or_lblAsiaHigh, or_labelBar, y, "Asia High", label.style_label_down, or_asiaColor, color.black)
+        else
+            label.delete(or_lblAsiaHigh), or_lblAsiaHigh := na
+
+        if or_showAsia and array.size(or_asiaLowHist) > 0
+            y = line.get_y1(array.get(or_asiaLowHist, array.size(or_asiaLowHist)-1))
+            or_lblAsiaLow := or_f_updateBalloon(or_lblAsiaLow, or_labelBar, y, "Asia Low", label.style_label_up, or_asiaColor, color.black)
+        else
+            label.delete(or_lblAsiaLow), or_lblAsiaLow := na
+
+        // London
+        if or_showLondon and array.size(or_lonHighHist) > 0
+            y = line.get_y1(array.get(or_lonHighHist, array.size(or_lonHighHist)-1))
+            or_lblLondonHigh := or_f_updateBalloon(or_lblLondonHigh, or_labelBar, y, "London High", label.style_label_down, or_londonColor, color.white)
+        else
+            label.delete(or_lblLondonHigh), or_lblLondonHigh := na
+
+        if or_showLondon and array.size(or_lonLowHist) > 0
+            y = line.get_y1(array.get(or_lonLowHist, array.size(or_lonLowHist)-1))
+            or_lblLondonLow := or_f_updateBalloon(or_lblLondonLow, or_labelBar, y, "London Low", label.style_label_up, or_londonColor, color.white)
+        else
+            label.delete(or_lblLondonLow), or_lblLondonLow := na
+
+        // 15m
+        if or_showOR15 and array.size(or_orbHighHist) > 0
+            y = line.get_y1(array.get(or_orbHighHist, array.size(or_orbHighHist)-1))
+            or_lblOr15High := or_f_updateBalloon(or_lblOr15High, or_labelBar, y, "15m High", label.style_label_down, or_or15Color, color.black)
+        else
+            label.delete(or_lblOr15High), or_lblOr15High := na
+
+        if or_showOR15 and array.size(or_orbLowHist) > 0
+            y = line.get_y1(array.get(or_orbLowHist, array.size(or_orbLowHist)-1))
+            or_lblOr15Low := or_f_updateBalloon(or_lblOr15Low, or_labelBar, y, "15m Low", label.style_label_up, or_or15Color, color.black)
+        else
+            label.delete(or_lblOr15Low), or_lblOr15Low := na
+
+        // SF
+        if or_showSF and array.size(or_sfHighHist) > 0
+            y = line.get_y1(array.get(or_sfHighHist, array.size(or_sfHighHist)-1))
+            or_lblSFHigh := or_f_updateBalloon(or_lblSFHigh, or_labelBar, y, "SF High", label.style_label_down, or_sfColor, color.black)
+        else
+            label.delete(or_lblSFHigh), or_lblSFHigh := na
+
+        if or_showSF and array.size(or_sfLowHist) > 0
+            y = line.get_y1(array.get(or_sfLowHist, array.size(or_sfLowHist)-1))
+            or_lblSFLow := or_f_updateBalloon(or_lblSFLow, or_labelBar, y, "SF Low", label.style_label_up, or_sfColor, color.black)
+        else
+            label.delete(or_lblSFLow), or_lblSFLow := na
+
+// ============================================================================
+// END OF MODULE 2 (Opening Range)
+// ============================================================================
+
+// ============================================================================
+// MODULE 3: HTF PO3 - Multi Timeframes – Completely independent
+// ============================================================================
+// --- Group constants ---
+PO3_GROUP = "Higher Timeframe Power of Three (HTF-PO3)"
+
+// ----------------------------------------------------------------------------
+// PO3 – INPUTS
+// ----------------------------------------------------------------------------
+po3_candleOpacity       = input.int(50, "Candle Opacity", minval=0, maxval=100, step=5, group=PO3_GROUP)
+po3_gapBetweenGroups = input.int(8, "Gap between Groups (bars)", minval=3, maxval=50, group=PO3_GROUP)
+po3_showSeparators      = input.bool(true, "Show Group Separators", group=PO3_GROUP)
+po3_separatorColor      = input.color(color.white, "Separator Color", group=PO3_GROUP)
+po3_separatorStyleS     = input.string("Dashed", "Separator Line Style", options=["Solid", "Dashed", "Dotted"], group=PO3_GROUP)
+po3_showGroupTitles     = input.bool(true, "Show Group Titles", group=PO3_GROUP)
+po3_titleBullColor      = input.color(color.green, "Bullish Title Color", group=PO3_GROUP)
+po3_titleBearColor      = input.color(color.red,   "Bearish Title Color", group=PO3_GROUP)
+po3_showVolume          = input.bool(true, "Show Volume Bars", group=PO3_GROUP)
+po3_volumeHeight        = input.int(15, "Volume Height (%)", minval=5, maxval=40, step=5, group=PO3_GROUP)
+po3_volumeGap           = input.int(2, "Volume Gap (%)", minval=0, maxval=50, step=1, group=PO3_GROUP)
+po3_showVolMA           = input.bool(true, "Show Volume MA", group=PO3_GROUP)
+po3_volMAType           = input.string("EMA", "Volume MA Type", options=["EMA", "SMA", "WMA", "VWMA"], group=PO3_GROUP)
+po3_volMALength         = input.int(4, "Volume MA Length", minval=2, maxval=20, group=PO3_GROUP)
+po3_volMAColor          = input.color(color.orange, "Volume MA Color", group=PO3_GROUP)
+po3_labelFontSize       = input.string("Normal", "Label Font Size", options=["Auto", "Tiny", "Small", "Normal", "Large", "Huge"], group=PO3_GROUP)
+
+po3_htfgroup = "HTF-PO3 | Higher Timeframes"
+po3_htf1Input = input.timeframe("5",  "Higher Timeframe 1", group=po3_htfgroup)
+po3_htf2Input = input.timeframe("15", "Higher Timeframe 2", group=po3_htfgroup)
+po3_htf3Input = input.timeframe("60", "Higher Timeframe 3", group=po3_htfgroup)
+po3_htf4Input = input.timeframe("240", "Higher Timeframe 4", group=po3_htfgroup)
+
+po3_fvgGroup = "HTF-PO3 | FVG"
+po3_showFVG       = input.bool(true,  "Show FVG", group=po3_fvgGroup)
+po3_fvgBullColor  = input.color(color.green, "Bullish FVG", group=po3_fvgGroup)
+po3_fvgBearColor  = input.color(color.red,   "Bearish FVG", group=po3_fvgGroup)
+po3_fvgOpacity    = input.int(80, "FVG Opacity (0 solid → 100 invisible)", minval=0, maxval=100, group=po3_fvgGroup)
+
+// ----------------------------------------------------------------------------
+// PO3 – Fixed candle configurations
+// ----------------------------------------------------------------------------
+var array<int> po3_htf1CandleCounts = array.from(po3_gapBetweenGroups, po3_gapBetweenGroups + 3, po3_gapBetweenGroups + 6, po3_gapBetweenGroups + 9, po3_gapBetweenGroups + 12, po3_gapBetweenGroups + 15)
+
+var po3_htf2Base = array.get(po3_htf1CandleCounts, 5) + 2 + po3_gapBetweenGroups
+var array<int> po3_htf2CandleCounts = array.from(po3_htf2Base, po3_htf2Base + 3, po3_htf2Base + 6, po3_htf2Base + 9, po3_htf2Base + 12, po3_htf2Base + 15)
+
+var po3_htf3Base = array.get(po3_htf2CandleCounts, 5) + 2 + po3_gapBetweenGroups
+var array<int> po3_htf3CandleCounts = array.from(po3_htf3Base, po3_htf3Base + 3, po3_htf3Base + 6, po3_htf3Base + 9, po3_htf3Base + 12, po3_htf3Base + 15)
+
+var po3_htf4Base = array.get(po3_htf3CandleCounts, 5) + 2 + po3_gapBetweenGroups
+var array<int> po3_htf4CandleCounts = array.from(po3_htf4Base, po3_htf4Base + 3, po3_htf4Base + 6, po3_htf4Base + 9, po3_htf4Base + 12, po3_htf4Base + 15)
+
+// ----------------------------------------------------------------------------
+// PO3 – Colors with opacity
+// ----------------------------------------------------------------------------
+var color po3_greenCandleBase = color.rgb(103, 135, 151)
+var color po3_redCandleBase = color.rgb(136, 93, 100)
+var color po3_wickColorBase = color.gray
+
+var po3_greenCandle = color.new(po3_greenCandleBase, po3_candleOpacity)
+var po3_redCandle   = color.new(po3_redCandleBase,   po3_candleOpacity)
+var po3_wickColor   = color.new(po3_wickColorBase,   po3_candleOpacity)
+
+var color po3_fvgBullCached = color.new(po3_fvgBullColor, po3_fvgOpacity)
+var color po3_fvgBearCached = color.new(po3_fvgBearColor, po3_fvgOpacity)
+var int po3_volMAMode = po3_volMAType == "EMA" ? 0 : po3_volMAType == "WMA" ? 1 : po3_volMAType == "VWMA" ? 2 : 3
+
+// ----------------------------------------------------------------------------
+// PO3 – Helper: timeframe to display text
+// ----------------------------------------------------------------------------
+po3_f_tfText(tfInput) =>
+    tfMin = timeframe.in_seconds(tfInput) / 60
+    tfMin == 43200 ? "M" :
+     tfMin == 10080 ? "W" :
+     tfMin == 1440  ? "D" :
+     tfMin == 240   ? "4h" :
+     tfMin == 120   ? "2h" :
+     tfMin == 60    ? "1h" :
+     str.tostring(tfMin) + "m"
+
+po3_f_labelSize(s) =>
+    s == "Tiny" ? size.tiny : s == "Small" ? size.small : s == "Large" ? size.large : s == "Huge" ? size.huge : s == "Auto" ? size.auto : size.normal
+
+var po3_labelSizeFinal = po3_f_labelSize(po3_labelFontSize)
+
+// ----------------------------------------------------------------------------
+// PO3 – Helper: draw a single candle (body + wicks)
+// ----------------------------------------------------------------------------
+po3_f_drawCandle(xO, xH, xL, xC, bodyLeftBar, bodyRightBar, wickBar, bodiesArr, upperArr, lowerArr, idx) =>
+    isUp   = xO < xC
+    isDn   = xO > xC
+    isDoji = xO == xC
+    bodyColor = isUp ? po3_greenCandle : isDn ? po3_redCandle : po3_wickColor
+    if not isDoji
+        bodyTop    = math.max(xO, xC)
+        bodyBottom = math.min(xO, xC)
+        array.set(bodiesArr, idx, box.new(bodyLeftBar, bodyTop, bodyRightBar, bodyBottom, bgcolor=bodyColor, border_color=bodyColor, border_width=1))
+    else
+        array.set(bodiesArr, idx, box.new(bodyLeftBar, xO + (xO * 0.0001), bodyRightBar, xO - (xO * 0.0001), bgcolor=po3_wickColor, border_color=po3_wickColor, border_width=1))
+    // upper wick
+    wickTopBottom = isDoji ? xO : (isUp ? xC : xO)
+    if xH > wickTopBottom
+        array.set(upperArr, idx, line.new(wickBar, xH, wickBar, wickTopBottom, color=po3_wickColor, width=1))
+    // lower wick
+    wickBottomTop = isDoji ? xO : (isDn ? xC : xO)
+    if wickBottomTop > xL
+        array.set(lowerArr, idx, line.new(wickBar, wickBottomTop, wickBar, xL, color=po3_wickColor, width=1))
+    true
+
+// ----------------------------------------------------------------------------
+// PO3 – Helper: select MA algorithm once with integer mode (faster than string checks)
+// ----------------------------------------------------------------------------
+po3_f_volMA(_mode, _len) =>
+    _mode == 0 ? ta.ema(volume, _len) :
+     _mode == 1 ? ta.wma(volume, _len) :
+     _mode == 2 ? ta.vwma(volume, _len) :
+     ta.sma(volume, _len)
+
+// ----------------------------------------------------------------------------
+// PO3 – FVG helper: detect and draw Fair Value Gaps for a candle group
+// ----------------------------------------------------------------------------
+po3_f_drawFVGs(array<float> highs, array<float> lows, array<int> candleCounts, int count, array<box> fvgArr, int startIdx) =>
+    idx = startIdx
+    if count >= 3
+        for i = 0 to count - 3
+            h1 = array.get(highs, i)
+            l1 = array.get(lows,  i)
+            h3 = array.get(highs, i + 2)
+            l3 = array.get(lows,  i + 2)
+            if not na(h1) and not na(l3) and not na(l1) and not na(h3)
+                if l3 > h1
+                    leftBar  = bar_index + array.get(candleCounts, i) + global_futureExtension
+                    rightBar = bar_index + array.get(candleCounts, i + 2) + global_futureExtension + 2
+                    array.set(fvgArr, idx, box.new(leftBar, l3, rightBar, h1, bgcolor=po3_fvgBullCached, border_color=po3_fvgBullCached))
+                    idx += 1
+                else if l1 > h3
+                    leftBar  = bar_index + array.get(candleCounts, i) + global_futureExtension
+                    rightBar = bar_index + array.get(candleCounts, i + 2) + global_futureExtension + 2
+                    array.set(fvgArr, idx, box.new(leftBar, l1, rightBar, h3, bgcolor=po3_fvgBearCached, border_color=po3_fvgBearCached))
+                    idx += 1
+    idx
+
+// ----------------------------------------------------------------------------
+// PO3 – Volume bar helper: draw volume bars at chart bottom for a candle group
+// Returns maxVol for use in MA line scaling
+// ----------------------------------------------------------------------------
+po3_f_drawVolBars(array<float> vols, array<float> opens, array<float> closes, array<int> candleCounts, int count, array<box> volBarsArr, float volBase, float volMaxHeight, color bullColor, color bearColor) =>
+    // Find max volume in this group for proportional scaling
+    float maxVol = 0.0
+    for i = 0 to count - 1
+        v = array.get(vols, i)
+        if not na(v) and v > maxVol
+            maxVol := v
+    if maxVol > 0
+        for i = 0 to count - 1
+            v = array.get(vols, i)
+            o = array.get(opens, i)
+            c = array.get(closes, i)
+            if not na(v) and v > 0
+                barHeight = (v / maxVol) * volMaxHeight
+                candleCount = array.get(candleCounts, i) + global_futureExtension
+                bodyLeftBar  = bar_index + candleCount
+                bodyRightBar = bar_index + candleCount + 2
+                barColor = (not na(o) and not na(c) and c >= o) ? bullColor : bearColor
+                array.set(volBarsArr, i, box.new(bodyLeftBar, volBase + barHeight, bodyRightBar, volBase, bgcolor=barColor, border_color=barColor, border_width=1))
+    maxVol
+
+// ----------------------------------------------------------------------------
+// PO3 – Volume MA line helper: draw MA line across volume bars
+// ----------------------------------------------------------------------------
+po3_f_drawVolMA(array<float> maVals, array<int> candleCounts, int count, array<line> maLinesArr, float volBase, float volMaxHeight, float maxVol, color maColor) =>
+    if maxVol > 0
+        for i = 0 to count - 2
+            ma1 = array.get(maVals, i)
+            ma2 = array.get(maVals, i + 1)
+            if not na(ma1) and not na(ma2)
+                y1 = volBase + math.min(ma1 / maxVol, 1.0) * volMaxHeight
+                y2 = volBase + math.min(ma2 / maxVol, 1.0) * volMaxHeight
+                x1 = bar_index + array.get(candleCounts, i) + global_futureExtension + 1
+                x2 = bar_index + array.get(candleCounts, i + 1) + global_futureExtension + 1
+                array.set(maLinesArr, i, line.new(x1, y1, x2, y2, color=maColor, width=2))
+    true
+
+// ----------------------------------------------------------------------------
+// PO3 – Arrays to store HTF OHLC data
+// ----------------------------------------------------------------------------
+var array<float> po3_htf1Opens  = array.new<float>(6, na)
+var array<float> po3_htf1Highs  = array.new<float>(6, na)
+var array<float> po3_htf1Lows   = array.new<float>(6, na)
+var array<float> po3_htf1Closes = array.new<float>(6, na)
+
+var array<float> po3_htf2Opens  = array.new<float>(6, na)
+var array<float> po3_htf2Highs  = array.new<float>(6, na)
+var array<float> po3_htf2Lows   = array.new<float>(6, na)
+var array<float> po3_htf2Closes = array.new<float>(6, na)
+
+var array<float> po3_htf3Opens  = array.new<float>(6, na)
+var array<float> po3_htf3Highs  = array.new<float>(6, na)
+var array<float> po3_htf3Lows   = array.new<float>(6, na)
+var array<float> po3_htf3Closes = array.new<float>(6, na)
+
+var array<float> po3_htf4Opens  = array.new<float>(6, na)
+var array<float> po3_htf4Highs  = array.new<float>(6, na)
+var array<float> po3_htf4Lows   = array.new<float>(6, na)
+var array<float> po3_htf4Closes = array.new<float>(6, na)
+
+var array<float> po3_htf1Vols = array.new<float>(6, na)
+var array<float> po3_htf2Vols = array.new<float>(6, na)
+var array<float> po3_htf3Vols = array.new<float>(6, na)
+var array<float> po3_htf4Vols = array.new<float>(6, na)
+
+var array<float> po3_htf1VolMA = array.new<float>(6, na)
+var array<float> po3_htf2VolMA = array.new<float>(6, na)
+var array<float> po3_htf3VolMA = array.new<float>(6, na)
+var array<float> po3_htf4VolMA = array.new<float>(6, na)
+
+// ----------------------------------------------------------------------------
+// PO3 – request.security calls (OPT #4: merged OHLC+Vol+MA → 1 call per HTF, 8→4 total)
+// ----------------------------------------------------------------------------
+po3_f_get_all_6() =>
+    maVal = po3_f_volMA(po3_volMAMode, po3_volMALength)
+    [open[5], high[5], low[5], close[5], open[4], high[4], low[4], close[4], open[3], high[3], low[3], close[3], open[2], high[2], low[2], close[2], open[1], high[1], low[1], close[1], open[0], high[0], low[0], close[0], volume[5], volume[4], volume[3], volume[2], volume[1], volume[0], maVal[5], maVal[4], maVal[3], maVal[2], maVal[1], maVal[0]]
+
+[po3_htf1O5, po3_htf1H5, po3_htf1L5, po3_htf1C5, po3_htf1O4, po3_htf1H4, po3_htf1L4, po3_htf1C4, po3_htf1O3, po3_htf1H3, po3_htf1L3, po3_htf1C3, po3_htf1O2, po3_htf1H2, po3_htf1L2, po3_htf1C2, po3_htf1O1, po3_htf1H1, po3_htf1L1, po3_htf1C1, po3_htf1O0, po3_htf1H0, po3_htf1L0, po3_htf1C0, po3_htf1V5, po3_htf1V4, po3_htf1V3, po3_htf1V2, po3_htf1V1, po3_htf1V0, po3_htf1MA5, po3_htf1MA4, po3_htf1MA3, po3_htf1MA2, po3_htf1MA1, po3_htf1MA0] = request.security(syminfo.tickerid, po3_htf1Input, po3_f_get_all_6(), lookahead=barmerge.lookahead_off)
+
+[po3_htf2O5, po3_htf2H5, po3_htf2L5, po3_htf2C5, po3_htf2O4, po3_htf2H4, po3_htf2L4, po3_htf2C4, po3_htf2O3, po3_htf2H3, po3_htf2L3, po3_htf2C3, po3_htf2O2, po3_htf2H2, po3_htf2L2, po3_htf2C2, po3_htf2O1, po3_htf2H1, po3_htf2L1, po3_htf2C1, po3_htf2O0, po3_htf2H0, po3_htf2L0, po3_htf2C0, po3_htf2V5, po3_htf2V4, po3_htf2V3, po3_htf2V2, po3_htf2V1, po3_htf2V0, po3_htf2MA5, po3_htf2MA4, po3_htf2MA3, po3_htf2MA2, po3_htf2MA1, po3_htf2MA0] = request.security(syminfo.tickerid, po3_htf2Input, po3_f_get_all_6(), lookahead=barmerge.lookahead_off)
+
+[po3_htf3O5, po3_htf3H5, po3_htf3L5, po3_htf3C5, po3_htf3O4, po3_htf3H4, po3_htf3L4, po3_htf3C4, po3_htf3O3, po3_htf3H3, po3_htf3L3, po3_htf3C3, po3_htf3O2, po3_htf3H2, po3_htf3L2, po3_htf3C2, po3_htf3O1, po3_htf3H1, po3_htf3L1, po3_htf3C1, po3_htf3O0, po3_htf3H0, po3_htf3L0, po3_htf3C0, po3_htf3V5, po3_htf3V4, po3_htf3V3, po3_htf3V2, po3_htf3V1, po3_htf3V0, po3_htf3MA5, po3_htf3MA4, po3_htf3MA3, po3_htf3MA2, po3_htf3MA1, po3_htf3MA0] = request.security(syminfo.tickerid, po3_htf3Input, po3_f_get_all_6(), lookahead=barmerge.lookahead_off)
+
+[po3_htf4O5, po3_htf4H5, po3_htf4L5, po3_htf4C5, po3_htf4O4, po3_htf4H4, po3_htf4L4, po3_htf4C4, po3_htf4O3, po3_htf4H3, po3_htf4L3, po3_htf4C3, po3_htf4O2, po3_htf4H2, po3_htf4L2, po3_htf4C2, po3_htf4O1, po3_htf4H1, po3_htf4L1, po3_htf4C1, po3_htf4O0, po3_htf4H0, po3_htf4L0, po3_htf4C0, po3_htf4V5, po3_htf4V4, po3_htf4V3, po3_htf4V2, po3_htf4V1, po3_htf4V0, po3_htf4MA5, po3_htf4MA4, po3_htf4MA3, po3_htf4MA2, po3_htf4MA1, po3_htf4MA0] = request.security(syminfo.tickerid, po3_htf4Input, po3_f_get_all_6(), lookahead=barmerge.lookahead_off)
+
+// ----------------------------------------------------------------------------
+// PO3 – Store OHLC data in arrays
+// ----------------------------------------------------------------------------
+// OPT: Only populate arrays on last bar (consumed only in barstate.islast block)
+if barstate.islast
+    // HTF-1
+    array.set(po3_htf1Opens,  0, po3_htf1O5), array.set(po3_htf1Highs,  0, po3_htf1H5), array.set(po3_htf1Lows,   0, po3_htf1L5), array.set(po3_htf1Closes, 0, po3_htf1C5)
+    array.set(po3_htf1Opens,  1, po3_htf1O4), array.set(po3_htf1Highs,  1, po3_htf1H4), array.set(po3_htf1Lows,   1, po3_htf1L4), array.set(po3_htf1Closes, 1, po3_htf1C4)
+    array.set(po3_htf1Opens,  2, po3_htf1O3), array.set(po3_htf1Highs,  2, po3_htf1H3), array.set(po3_htf1Lows,   2, po3_htf1L3), array.set(po3_htf1Closes, 2, po3_htf1C3)
+    array.set(po3_htf1Opens,  3, po3_htf1O2), array.set(po3_htf1Highs,  3, po3_htf1H2), array.set(po3_htf1Lows,   3, po3_htf1L2), array.set(po3_htf1Closes, 3, po3_htf1C2)
+    array.set(po3_htf1Opens,  4, po3_htf1O1), array.set(po3_htf1Highs,  4, po3_htf1H1), array.set(po3_htf1Lows,   4, po3_htf1L1), array.set(po3_htf1Closes, 4, po3_htf1C1)
+    array.set(po3_htf1Opens,  5, po3_htf1O0), array.set(po3_htf1Highs,  5, po3_htf1H0), array.set(po3_htf1Lows,   5, po3_htf1L0), array.set(po3_htf1Closes, 5, po3_htf1C0)
+    // HTF-2
+    array.set(po3_htf2Opens,  0, po3_htf2O5), array.set(po3_htf2Highs,  0, po3_htf2H5), array.set(po3_htf2Lows,   0, po3_htf2L5), array.set(po3_htf2Closes, 0, po3_htf2C5)
+    array.set(po3_htf2Opens,  1, po3_htf2O4), array.set(po3_htf2Highs,  1, po3_htf2H4), array.set(po3_htf2Lows,   1, po3_htf2L4), array.set(po3_htf2Closes, 1, po3_htf2C4)
+    array.set(po3_htf2Opens,  2, po3_htf2O3), array.set(po3_htf2Highs,  2, po3_htf2H3), array.set(po3_htf2Lows,   2, po3_htf2L3), array.set(po3_htf2Closes, 2, po3_htf2C3)
+    array.set(po3_htf2Opens,  3, po3_htf2O2), array.set(po3_htf2Highs,  3, po3_htf2H2), array.set(po3_htf2Lows,   3, po3_htf2L2), array.set(po3_htf2Closes, 3, po3_htf2C2)
+    array.set(po3_htf2Opens,  4, po3_htf2O1), array.set(po3_htf2Highs,  4, po3_htf2H1), array.set(po3_htf2Lows,   4, po3_htf2L1), array.set(po3_htf2Closes, 4, po3_htf2C1)
+    array.set(po3_htf2Opens,  5, po3_htf2O0), array.set(po3_htf2Highs,  5, po3_htf2H0), array.set(po3_htf2Lows,   5, po3_htf2L0), array.set(po3_htf2Closes, 5, po3_htf2C0)
+    // HTF-3
+    array.set(po3_htf3Opens,  0, po3_htf3O5), array.set(po3_htf3Highs,  0, po3_htf3H5), array.set(po3_htf3Lows,   0, po3_htf3L5), array.set(po3_htf3Closes, 0, po3_htf3C5)
+    array.set(po3_htf3Opens,  1, po3_htf3O4), array.set(po3_htf3Highs,  1, po3_htf3H4), array.set(po3_htf3Lows,   1, po3_htf3L4), array.set(po3_htf3Closes, 1, po3_htf3C4)
+    array.set(po3_htf3Opens,  2, po3_htf3O3), array.set(po3_htf3Highs,  2, po3_htf3H3), array.set(po3_htf3Lows,   2, po3_htf3L3), array.set(po3_htf3Closes, 2, po3_htf3C3)
+    array.set(po3_htf3Opens,  3, po3_htf3O2), array.set(po3_htf3Highs,  3, po3_htf3H2), array.set(po3_htf3Lows,   3, po3_htf3L2), array.set(po3_htf3Closes, 3, po3_htf3C2)
+    array.set(po3_htf3Opens,  4, po3_htf3O1), array.set(po3_htf3Highs,  4, po3_htf3H1), array.set(po3_htf3Lows,   4, po3_htf3L1), array.set(po3_htf3Closes, 4, po3_htf3C1)
+    array.set(po3_htf3Opens,  5, po3_htf3O0), array.set(po3_htf3Highs,  5, po3_htf3H0), array.set(po3_htf3Lows,   5, po3_htf3L0), array.set(po3_htf3Closes, 5, po3_htf3C0)
+    // HTF-4
+    array.set(po3_htf4Opens,  0, po3_htf4O5), array.set(po3_htf4Highs,  0, po3_htf4H5), array.set(po3_htf4Lows,   0, po3_htf4L5), array.set(po3_htf4Closes, 0, po3_htf4C5)
+    array.set(po3_htf4Opens,  1, po3_htf4O4), array.set(po3_htf4Highs,  1, po3_htf4H4), array.set(po3_htf4Lows,   1, po3_htf4L4), array.set(po3_htf4Closes, 1, po3_htf4C4)
+    array.set(po3_htf4Opens,  2, po3_htf4O3), array.set(po3_htf4Highs,  2, po3_htf4H3), array.set(po3_htf4Lows,   2, po3_htf4L3), array.set(po3_htf4Closes, 2, po3_htf4C3)
+    array.set(po3_htf4Opens,  3, po3_htf4O2), array.set(po3_htf4Highs,  3, po3_htf4H2), array.set(po3_htf4Lows,   3, po3_htf4L2), array.set(po3_htf4Closes, 3, po3_htf4C2)
+    array.set(po3_htf4Opens,  4, po3_htf4O1), array.set(po3_htf4Highs,  4, po3_htf4H1), array.set(po3_htf4Lows,   4, po3_htf4L1), array.set(po3_htf4Closes, 4, po3_htf4C1)
+    array.set(po3_htf4Opens,  5, po3_htf4O0), array.set(po3_htf4Highs,  5, po3_htf4H0), array.set(po3_htf4Lows,   5, po3_htf4L0), array.set(po3_htf4Closes, 5, po3_htf4C0)
+    // Volume
+    array.set(po3_htf1Vols, 0, po3_htf1V5), array.set(po3_htf1Vols, 1, po3_htf1V4), array.set(po3_htf1Vols, 2, po3_htf1V3), array.set(po3_htf1Vols, 3, po3_htf1V2), array.set(po3_htf1Vols, 4, po3_htf1V1), array.set(po3_htf1Vols, 5, po3_htf1V0)
+    array.set(po3_htf2Vols, 0, po3_htf2V5), array.set(po3_htf2Vols, 1, po3_htf2V4), array.set(po3_htf2Vols, 2, po3_htf2V3), array.set(po3_htf2Vols, 3, po3_htf2V2), array.set(po3_htf2Vols, 4, po3_htf2V1), array.set(po3_htf2Vols, 5, po3_htf2V0)
+    array.set(po3_htf3Vols, 0, po3_htf3V5), array.set(po3_htf3Vols, 1, po3_htf3V4), array.set(po3_htf3Vols, 2, po3_htf3V3), array.set(po3_htf3Vols, 3, po3_htf3V2), array.set(po3_htf3Vols, 4, po3_htf3V1), array.set(po3_htf3Vols, 5, po3_htf3V0)
+    array.set(po3_htf4Vols, 0, po3_htf4V5), array.set(po3_htf4Vols, 1, po3_htf4V4), array.set(po3_htf4Vols, 2, po3_htf4V3), array.set(po3_htf4Vols, 3, po3_htf4V2), array.set(po3_htf4Vols, 4, po3_htf4V1), array.set(po3_htf4Vols, 5, po3_htf4V0)
+    // Volume MA
+    array.set(po3_htf1VolMA, 0, po3_htf1MA5), array.set(po3_htf1VolMA, 1, po3_htf1MA4), array.set(po3_htf1VolMA, 2, po3_htf1MA3), array.set(po3_htf1VolMA, 3, po3_htf1MA2), array.set(po3_htf1VolMA, 4, po3_htf1MA1), array.set(po3_htf1VolMA, 5, po3_htf1MA0)
+    array.set(po3_htf2VolMA, 0, po3_htf2MA5), array.set(po3_htf2VolMA, 1, po3_htf2MA4), array.set(po3_htf2VolMA, 2, po3_htf2MA3), array.set(po3_htf2VolMA, 3, po3_htf2MA2), array.set(po3_htf2VolMA, 4, po3_htf2MA1), array.set(po3_htf2VolMA, 5, po3_htf2MA0)
+    array.set(po3_htf3VolMA, 0, po3_htf3MA5), array.set(po3_htf3VolMA, 1, po3_htf3MA4), array.set(po3_htf3VolMA, 2, po3_htf3MA3), array.set(po3_htf3VolMA, 3, po3_htf3MA2), array.set(po3_htf3VolMA, 4, po3_htf3MA1), array.set(po3_htf3VolMA, 5, po3_htf3MA0)
+    array.set(po3_htf4VolMA, 0, po3_htf4MA5), array.set(po3_htf4VolMA, 1, po3_htf4MA4), array.set(po3_htf4VolMA, 2, po3_htf4MA3), array.set(po3_htf4VolMA, 3, po3_htf4MA2), array.set(po3_htf4VolMA, 4, po3_htf4MA1), array.set(po3_htf4VolMA, 5, po3_htf4MA0)
+
+
+// ----------------------------------------------------------------------------
+// PO3 – Drawing objects arrays
+// ----------------------------------------------------------------------------
+var array<box>  po3_htf1CandleBodies = array.new<box>(6, na)
+var array<line> po3_htf1UpperWicks   = array.new<line>(6, na)
+var array<line> po3_htf1LowerWicks   = array.new<line>(6, na)
+
+var array<box>  po3_htf2CandleBodies = array.new<box>(6, na)
+var array<line> po3_htf2UpperWicks   = array.new<line>(6, na)
+var array<line> po3_htf2LowerWicks   = array.new<line>(6, na)
+
+var array<box>  po3_htf3CandleBodies = array.new<box>(6, na)
+var array<line> po3_htf3UpperWicks   = array.new<line>(6, na)
+var array<line> po3_htf3LowerWicks   = array.new<line>(6, na)
+
+var array<box>  po3_htf4CandleBodies = array.new<box>(6, na)
+var array<line> po3_htf4UpperWicks   = array.new<line>(6, na)
+var array<line> po3_htf4LowerWicks   = array.new<line>(6, na)
+
+// FVG box storage: max 4×4 = 16 FVGs across all groups
+var array<box> po3_fvgBoxes = array.new<box>(16, na)
+
+// Volume bar box storage
+var array<box> po3_htf1VolBars = array.new<box>(6, na)
+var array<box> po3_htf2VolBars = array.new<box>(6, na)
+var array<box> po3_htf3VolBars = array.new<box>(6, na)
+var array<box> po3_htf4VolBars = array.new<box>(6, na)
+
+// Volume MA line storage (5 segments per group connecting 6 points)
+var array<line> po3_htf1MALines = array.new<line>(5, na)
+var array<line> po3_htf2MALines = array.new<line>(5, na)
+var array<line> po3_htf3MALines = array.new<line>(5, na)
+var array<line> po3_htf4MALines = array.new<line>(5, na)
+
+// Separator lines: future ext + between HTF1/2, HTF2/3, HTF3/4
+var array<line> po3_separatorLines = array.new<line>(4, na)
+// Group title labels
+var array<label> po3_groupTitles = array.new<label>(4, na)
+
+// ----------------------------------------------------------------------------
+// PO3 – Stable chart range (OPT #5: cached with var, only updated on confirmed/last bar)
+// ----------------------------------------------------------------------------
+var float po3_refHigh  = na
+var float po3_refLow   = na
+if barstate.isconfirmed or barstate.islast
+    po3_refHigh := ta.highest(high, 100)
+    po3_refLow  := ta.lowest(low, 100)
+float po3_refRange = nz(po3_refHigh - po3_refLow)
+
+// Ensure a minimum range using ATR to avoid tiny ranges on flat markets
+float po3_minRange = ta.atr(14) * 8
+float po3_chartRange = math.max(po3_refRange, po3_minRange)
+
+float po3_chartMid   = (nz(po3_refHigh) + nz(po3_refLow)) / 2.0
+float po3_chartHigh  = po3_chartMid + po3_chartRange / 2.0
+float po3_chartLow   = po3_chartMid - po3_chartRange / 2.0
+
+// ----------------------------------------------------------------------------
+// PO3 – Per-group scaling: compress candles that exceed chart range
+// ----------------------------------------------------------------------------
+po3_f_scaleGroup(opens, highs, lows, closes, count, _chartHigh, _chartLow, visualWeight) =>
+    float gHigh = na
+    float gLow = na
+    for i = 0 to count - 1
+        _h = array.get(highs, i)
+        _l = array.get(lows, i)
+        if not na(_h)
+            gHigh := na(gHigh) ? _h : math.max(gHigh, _h)
+        if not na(_l)
+            gLow := na(gLow) ? _l : math.min(gLow, _l)
+    if not na(gHigh) and not na(gLow)
+        chartRange = _chartHigh - _chartLow
+        groupRange = gHigh - gLow
+        groupMid   = (gHigh + gLow) / 2.0
+        chartMid   = (_chartHigh + _chartLow) / 2.0
+        baseFactor  = groupRange > chartRange * 0.95 ? (chartRange * 0.85) / groupRange : 1.0
+        scaleFactor = baseFactor * visualWeight
+        for i = 0 to count - 1
+            o = array.get(opens, i)
+            if not na(o)
+                array.set(opens,  i, chartMid + (o - groupMid) * scaleFactor)
+                array.set(highs,  i, chartMid + (array.get(highs, i) - groupMid) * scaleFactor)
+                array.set(lows,   i, chartMid + (array.get(lows, i) - groupMid) * scaleFactor)
+                array.set(closes, i, chartMid + (array.get(closes, i) - groupMid) * scaleFactor)
+    true
+// OPT #9: Extracted candle-drawing helper (replaces 4 × 16 lines with 4 × 1 call)
+po3_f_drawGroup(array<float> opens, array<float> highs, array<float> lows, array<float> closes, array<int> candleCounts, array<box> bodies, array<line> upWicks, array<line> dnWicks, int futExt) =>
+    for i = 0 to 5
+        xO = array.get(opens, i)
+        xH = array.get(highs, i)
+        xL = array.get(lows,  i)
+        xC = array.get(closes, i)
+        if na(xO) or na(xH) or na(xL) or na(xC)
+            continue
+        candleCount = array.get(candleCounts, i) + futExt
+        bodyLeftBar  = bar_index + candleCount
+        bodyRightBar = bar_index + candleCount + 2
+        wickBar      = bar_index + candleCount + 1
+        po3_f_drawCandle(xO, xH, xL, xC, bodyLeftBar, bodyRightBar, wickBar, bodies, upWicks, dnWicks, i)
+    true
+
+// OPT #12: Extracted group title helper
+po3_f_addGroupTitle(array<float> opens, array<float> closes, string tfInput, array<int> candleCounts, array<label> titles, int idx, float topY, int futExt, string bullArrow, string bearArrow, color bullColor, color bearColor, string lblSize) =>
+    firstO = array.get(opens, 0)
+    lastC  = array.get(closes, 5)
+    isBull = not na(firstO) and not na(lastC) ? lastC >= firstO : true
+    title  = po3_f_tfText(tfInput) + (isBull ? bullArrow : bearArrow)
+    centerX = bar_index + math.round((array.get(candleCounts, 0) + array.get(candleCounts, 5)) / 2) + futExt + 1
+    array.set(titles, idx, label.new(centerX, topY, title, style=label.style_none, textcolor=isBull ? bullColor : bearColor, size=lblSize))
+    true
+
+// ----------------------------------------------------------------------------
+// PO3 – Drawing logic (only on last bar)
+// ----------------------------------------------------------------------------
+// --- OPT #6: Consolidated cleanup helper (top-level scope required by Pine) ---
+po3_f_cleanupGroup(array<box> bodies, array<line> upW, array<line> dnW, array<box> vBars, bool showVol) =>
+    for i = 0 to 5
+        box body = array.get(bodies, i)
+        line up = array.get(upW, i)
+        line dn = array.get(dnW, i)
+        if not na(body)
+            box.delete(body)
+            array.set(bodies, i, na)
+        if not na(up)
+            line.delete(up)
+            array.set(upW, i, na)
+        if not na(dn)
+            line.delete(dn)
+            array.set(dnW, i, na)
+        if showVol
+            box vb = array.get(vBars, i)
+            if not na(vb)
+                box.delete(vb)
+                array.set(vBars, i, na)
+    true
+
+if barstate.islast
+    po3_f_cleanupGroup(po3_htf1CandleBodies, po3_htf1UpperWicks, po3_htf1LowerWicks, po3_htf1VolBars, po3_showVolume)
+    po3_f_cleanupGroup(po3_htf2CandleBodies, po3_htf2UpperWicks, po3_htf2LowerWicks, po3_htf2VolBars, po3_showVolume)
+    po3_f_cleanupGroup(po3_htf3CandleBodies, po3_htf3UpperWicks, po3_htf3LowerWicks, po3_htf3VolBars, po3_showVolume)
+    po3_f_cleanupGroup(po3_htf4CandleBodies, po3_htf4UpperWicks, po3_htf4LowerWicks, po3_htf4VolBars, po3_showVolume)
+    // Clean up volume MA lines (guarded)
+    if po3_showVolume and po3_showVolMA
+        for i = 0 to 4
+            line ma1 = array.get(po3_htf1MALines, i)
+            line ma2 = array.get(po3_htf2MALines, i)
+            line ma3 = array.get(po3_htf3MALines, i)
+            line ma4 = array.get(po3_htf4MALines, i)
+            if not na(ma1)
+                line.delete(ma1)
+                array.set(po3_htf1MALines, i, na)
+            if not na(ma2)
+                line.delete(ma2)
+                array.set(po3_htf2MALines, i, na)
+            if not na(ma3)
+                line.delete(ma3)
+                array.set(po3_htf3MALines, i, na)
+            if not na(ma4)
+                line.delete(ma4)
+                array.set(po3_htf4MALines, i, na)
+    // Clean up FVG boxes (guarded)
+    if po3_showFVG
+        for i = 0 to array.size(po3_fvgBoxes) - 1
+            box fvg = array.get(po3_fvgBoxes, i)
+            if not na(fvg)
+                box.delete(fvg)
+                array.set(po3_fvgBoxes, i, na)
+
+    // Clean up separator lines and group titles
+    for i = 0 to 3
+        line sep = array.get(po3_separatorLines, i)
+        label ttl = array.get(po3_groupTitles, i)
+        if not na(sep)
+            line.delete(sep)
+            array.set(po3_separatorLines, i, na)
+        if not na(ttl)
+            label.delete(ttl)
+            array.set(po3_groupTitles, i, na)
+
+    // --- Visual weights ---
+    float po3_vw1 = 0.50
+    float po3_vw2 = 0.65
+    float po3_vw3 = 0.80
+    float po3_vw4 = 1.00
+
+    // --- Unified layout: partition stable range into zones (all fits on screen) ---
+    // Layout: [layoutBottom] volume region | gap | candle region [layoutTop]
+    // The TradingView native Canvas Margins handle actual screen breathing room.
+    float layoutTop    = po3_chartHigh
+    float layoutBottom = po3_chartLow
+
+    float volRegionHeight = po3_chartRange * (po3_volumeHeight / 100.0)
+    float volGapSize      = po3_chartRange * (po3_volumeGap / 100.0)
+
+    // Volume base sits directly on the bottom edge
+    float volBase      = layoutBottom
+    // Candle region fills from above volume+gap to the very top edge
+    float scalingLow   = po3_showVolume ? (volBase + volRegionHeight + volGapSize) : layoutBottom
+    float scalingHigh  = layoutTop
+
+    // --- Scale HTF groups with progressive visual weight (using shifted center) ---
+    po3_f_scaleGroup(po3_htf1Opens, po3_htf1Highs, po3_htf1Lows, po3_htf1Closes, 6, scalingHigh, scalingLow, po3_vw1)
+    po3_f_scaleGroup(po3_htf2Opens, po3_htf2Highs, po3_htf2Lows, po3_htf2Closes, 6, scalingHigh, scalingLow, po3_vw2)
+    po3_f_scaleGroup(po3_htf3Opens, po3_htf3Highs, po3_htf3Lows, po3_htf3Closes, 6, scalingHigh, scalingLow, po3_vw3)
+    po3_f_scaleGroup(po3_htf4Opens, po3_htf4Highs, po3_htf4Lows, po3_htf4Closes, 6, scalingHigh, scalingLow, po3_vw4)
+
+    // --- OPT #9: Draw all 4 HTF groups via helper ---
+    po3_f_drawGroup(po3_htf1Opens, po3_htf1Highs, po3_htf1Lows, po3_htf1Closes, po3_htf1CandleCounts, po3_htf1CandleBodies, po3_htf1UpperWicks, po3_htf1LowerWicks, global_futureExtension)
+    po3_f_drawGroup(po3_htf2Opens, po3_htf2Highs, po3_htf2Lows, po3_htf2Closes, po3_htf2CandleCounts, po3_htf2CandleBodies, po3_htf2UpperWicks, po3_htf2LowerWicks, global_futureExtension)
+    po3_f_drawGroup(po3_htf3Opens, po3_htf3Highs, po3_htf3Lows, po3_htf3Closes, po3_htf3CandleCounts, po3_htf3CandleBodies, po3_htf3UpperWicks, po3_htf3LowerWicks, global_futureExtension)
+    po3_f_drawGroup(po3_htf4Opens, po3_htf4Highs, po3_htf4Lows, po3_htf4Closes, po3_htf4CandleCounts, po3_htf4CandleBodies, po3_htf4UpperWicks, po3_htf4LowerWicks, global_futureExtension)
+
+    // --- Per-group volume max heights (visual weight applied) ---
+    float volH1 = volRegionHeight * po3_vw1
+    float volH2 = volRegionHeight * po3_vw2
+    float volH3 = volRegionHeight * po3_vw3
+    float volH4 = volRegionHeight * po3_vw4
+
+    // --- FVG Detection & Drawing ---
+    if po3_showFVG
+        int fvgIdx = 0
+        fvgIdx := po3_f_drawFVGs(po3_htf1Highs, po3_htf1Lows, po3_htf1CandleCounts, 6, po3_fvgBoxes, fvgIdx)
+        fvgIdx := po3_f_drawFVGs(po3_htf2Highs, po3_htf2Lows, po3_htf2CandleCounts, 6, po3_fvgBoxes, fvgIdx)
+        fvgIdx := po3_f_drawFVGs(po3_htf3Highs, po3_htf3Lows, po3_htf3CandleCounts, 6, po3_fvgBoxes, fvgIdx)
+        fvgIdx := po3_f_drawFVGs(po3_htf4Highs, po3_htf4Lows, po3_htf4CandleCounts, 6, po3_fvgBoxes, fvgIdx)
+
+    // --- Separator Lines & Group Titles ---
+    float sepTop = scalingHigh
+    float sepBottomFinal = po3_showVolume ? volBase : scalingLow
+
+    // Separator X positions: centered between last candle right edge and next group first candle left edge
+    int sep1X = bar_index + math.round((array.get(po3_htf1CandleCounts, 5) + array.get(po3_htf2CandleCounts, 0)) / 2) + global_futureExtension
+    int sep2X = bar_index + math.round((array.get(po3_htf2CandleCounts, 5) + array.get(po3_htf3CandleCounts, 0)) / 2) + global_futureExtension
+    int sep3X = bar_index + math.round((array.get(po3_htf3CandleCounts, 5) + array.get(po3_htf4CandleCounts, 0)) / 2) + global_futureExtension
+    int sep4X = bar_index + global_futureExtension + math.round(po3_gapBetweenGroups / 2)  // Future Extension: centered in gap before HTF1
+
+    if po3_showSeparators
+        po3_sepLineSty = po3_separatorStyleS == "Dashed" ? line.style_dashed : po3_separatorStyleS == "Dotted" ? line.style_dotted : line.style_solid
+        array.set(po3_separatorLines, 0, line.new(sep4X, sepTop, sep4X, sepBottomFinal, color=po3_separatorColor, width=1, style=po3_sepLineSty))
+        array.set(po3_separatorLines, 1, line.new(sep1X, sepTop, sep1X, sepBottomFinal, color=po3_separatorColor, width=1, style=po3_sepLineSty))
+        array.set(po3_separatorLines, 2, line.new(sep2X, sepTop, sep2X, sepBottomFinal, color=po3_separatorColor, width=1, style=po3_sepLineSty))
+        array.set(po3_separatorLines, 3, line.new(sep3X, sepTop, sep3X, sepBottomFinal, color=po3_separatorColor, width=1, style=po3_sepLineSty))
+
+    // --- Volume Bars (shared floor, visual weight on max height) ---
+    if po3_showVolume
+        float maxVol1 = po3_f_drawVolBars(po3_htf1Vols, po3_htf1Opens, po3_htf1Closes, po3_htf1CandleCounts, 6, po3_htf1VolBars, volBase, volH1, po3_greenCandle, po3_redCandle)
+        float maxVol2 = po3_f_drawVolBars(po3_htf2Vols, po3_htf2Opens, po3_htf2Closes, po3_htf2CandleCounts, 6, po3_htf2VolBars, volBase, volH2, po3_greenCandle, po3_redCandle)
+        float maxVol3 = po3_f_drawVolBars(po3_htf3Vols, po3_htf3Opens, po3_htf3Closes, po3_htf3CandleCounts, 6, po3_htf3VolBars, volBase, volH3, po3_greenCandle, po3_redCandle)
+        float maxVol4 = po3_f_drawVolBars(po3_htf4Vols, po3_htf4Opens, po3_htf4Closes, po3_htf4CandleCounts, 6, po3_htf4VolBars, volBase, volH4, po3_greenCandle, po3_redCandle)
+        // Volume MA lines
+        if po3_showVolMA
+            po3_f_drawVolMA(po3_htf1VolMA, po3_htf1CandleCounts, 6, po3_htf1MALines, volBase, volH1, maxVol1, po3_volMAColor)
+            po3_f_drawVolMA(po3_htf2VolMA, po3_htf2CandleCounts, 6, po3_htf2MALines, volBase, volH2, maxVol2, po3_volMAColor)
+            po3_f_drawVolMA(po3_htf3VolMA, po3_htf3CandleCounts, 6, po3_htf3MALines, volBase, volH3, maxVol3, po3_volMAColor)
+            po3_f_drawVolMA(po3_htf4VolMA, po3_htf4CandleCounts, 6, po3_htf4MALines, volBase, volH4, maxVol4, po3_volMAColor)
+
+    if po3_showGroupTitles
+        // OPT #12: Group titles via helper
+        string bullArrow = " ⤴"
+        string bearArrow = " ⤵"
+        po3_f_addGroupTitle(po3_htf1Opens, po3_htf1Closes, po3_htf1Input, po3_htf1CandleCounts, po3_groupTitles, 0, sepTop, global_futureExtension, bullArrow, bearArrow, po3_titleBullColor, po3_titleBearColor, po3_labelSizeFinal)
+        po3_f_addGroupTitle(po3_htf2Opens, po3_htf2Closes, po3_htf2Input, po3_htf2CandleCounts, po3_groupTitles, 1, sepTop, global_futureExtension, bullArrow, bearArrow, po3_titleBullColor, po3_titleBearColor, po3_labelSizeFinal)
+        po3_f_addGroupTitle(po3_htf3Opens, po3_htf3Closes, po3_htf3Input, po3_htf3CandleCounts, po3_groupTitles, 2, sepTop, global_futureExtension, bullArrow, bearArrow, po3_titleBullColor, po3_titleBearColor, po3_labelSizeFinal)
+        po3_f_addGroupTitle(po3_htf4Opens, po3_htf4Closes, po3_htf4Input, po3_htf4CandleCounts, po3_groupTitles, 3, sepTop, global_futureExtension, bullArrow, bearArrow, po3_titleBullColor, po3_titleBearColor, po3_labelSizeFinal)
+
+// ============================================================================
+// END OF MODULE 3 (HTF PO3)
+// ============================================================================

@@ -1,0 +1,1174 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © obextrade — Enhanced V2 with multi-symbol, 6-sample pivot ranges, invalidation, pivot lines, symbol bubbles
+// OPTIMIZED: tuple request.security(), var-qualified constants, early-exit loops, inlined removal, cached strings
+
+//@version=6
+indicator("SMT-CD-GPT Div Optimized", shorttitle="SMT-CD Divergence", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// ████████████████████████████████████████████████████████████████████████
+// HELPERS
+// ███████████████████████████████████████████████████∫█████████████████████
+f_fmt(float x) =>
+    str.tostring(x, format.mintick)
+
+f_ticker(string sym) =>
+    int p = str.pos(sym, ':')
+    p >= 0 ? str.substring(sym, p + 1) : sym
+
+// ████████████████████████████████████████████████████████████████████████
+// INPUTS — COMPARISON SYMBOLS
+// ████████████████████████████████████████████████████████████████████████
+string SYM_GROUP = '══════ Comparison Symbols ══════'
+
+bool   sym1On    = input.bool(true, 'Symbol 1', group=SYM_GROUP, inline='s1')
+string sym1Input = input.symbol('NQ1!', '', group=SYM_GROUP, inline='s1',
+     tooltip='Manual fallback symbol when auto ES↔NQ pairing is not used.')
+bool sym1AutoESNQ = input.bool(true, 'Auto ES↔NQ Pairing', group=SYM_GROUP,
+     tooltip='If enabled: ES/MES charts use NQ1! as Symbol 1, and NQ/MNQ charts use ES1! as Symbol 1.')
+bool   sym2On    = input.bool(true, 'Symbol 2', group=SYM_GROUP, inline='s2')
+string sym2Input = input.symbol('YM1!', '', group=SYM_GROUP, inline='s2')
+bool   sym3On    = input.bool(true, 'Symbol 3', group=SYM_GROUP, inline='s3')
+string sym3Input = input.symbol('RTY1!', '', group=SYM_GROUP, inline='s3',
+     tooltip='Russell 2000 futures — diversifies index coverage.')
+int smtMaxSkew = input.int(60, 'Max Pivot Skew (bars)', minval=5, maxval=200, group=SYM_GROUP,
+     tooltip='Maximum bar distance between chart pivot and comparison pivot to consider them time-aligned.')
+
+// ████████████████████████████████████████████████████████████████████████
+// INPUTS — PIVOT RANGES (fixed optimized samples, just toggle ON/OFF)
+// ████████████████████████████████████████████████████████████████████████
+string PIVOT_GROUP = '══════ Pivot Ranges ══════'
+
+bool range1On = input.bool(true,  'Micro / Scalp (4-20 min)', group=PIVOT_GROUP,
+     tooltip='Quick scalp entries off micro liquidity grabs. Fibonacci-based: 2,3,5,8 + gap-fills 6,10.')
+bool range2On = input.bool(true,  'Intraday (24-50 min)', group=PIVOT_GROUP,
+     tooltip='Standard day trade entries at 20–50 min swing structures. Key session fractions.')
+bool range3On = input.bool(false, 'Session Swing (1-2 hrs)', group=PIVOT_GROUP,
+     tooltip='Major killzone / session reversals. Fewer signals, highest conviction.')
+
+string TIMING_GROUP = '══════ Signal Timing ══════'
+bool enableSMTEarly = input.bool(true, 'Enable SMT Early Signals', group=TIMING_GROUP,
+     tooltip='Plots fast SMT signals using right-side confirmation = 0 (left-side only).')
+int smtRightBarsR1 = input.int(2, 'SMT Right Confirm Bars — Micro', minval=0, maxval=10, group=TIMING_GROUP,
+     tooltip='Right-side confirmation bars for Micro/Scalp range.')
+int smtRightBarsR2 = input.int(1, 'SMT Right Confirm Bars — Intraday', minval=0, maxval=10, group=TIMING_GROUP,
+     tooltip='Right-side confirmation bars for Intraday range.')
+int smtRightBarsR3 = input.int(0, 'SMT Right Confirm Bars — Session', minval=0, maxval=10, group=TIMING_GROUP,
+     tooltip='Right-side confirmation bars for Session Swing range.')
+bool useRealtimePivots = input.bool(true, 'CDDO Realtime Pivots (No Right-Side Delay)', group=TIMING_GROUP,
+     tooltip='If ON: CDDO pivots are detected from left-side structure only. If OFF: CDDO uses classic symmetric pivots.')
+
+// ████████████████████████████████████████████████████████████████████████
+// INPUTS — INVALIDATION
+// ████████████████████████████████████████████████████████████████████████
+string INV_GROUP = '══════ Invalidation ══════'
+
+bool  showInvalidated = input.bool(true, 'Show All SMT & CDDO Divergences (Keep Invalidated)', group=INV_GROUP)
+color invalidColor    = input.color(color.new(color.gray, 75), 'Invalidated SMT & CDDO Color', group=INV_GROUP,
+     tooltip='Use the color picker\'s Opacity slider to control how faded invalidated labels and lines appear.')
+
+// ████████████████████████████████████████████████████████████████████████
+// INPUTS — LABEL
+// ████████████████████████████████████████████████████████████████████████
+string LBL_GROUP = '══════ Labels ══════'
+
+string labelSizeInput = input.string('Tiny', 'Label Size', options=['Auto', 'Tiny', 'Small', 'Normal', 'Large'], group=LBL_GROUP,
+     tooltip='Controls the size of all SMT bubble labels.')
+
+var string resolvedLblSize = switch labelSizeInput
+    'Auto'   => size.auto
+    'Tiny'   => size.tiny
+    'Small'  => size.small
+    'Normal' => size.normal
+    'Large'  => size.large
+    => size.tiny
+
+// ████████████████████████████████████████████████████████████████████████
+// INPUTS — APPEARANCE BULLISH
+// ████████████████████████████████████████████████████████████████████████
+string BULL_GROUP = '══════ Appearance — Bullish ══════'
+
+color  bullColor     = input.color(#089981, 'Bullish SMT & CDDO Color', group=BULL_GROUP)
+int    bullLineWidth = input.int(1, 'Bullish Line Width', minval=1, maxval=5, group=BULL_GROUP)
+string bullLineStyle = input.string('Solid', 'Bullish Line Style', options=['Solid', 'Dashed', 'Dotted'], group=BULL_GROUP)
+
+// ████████████████████████████████████████████████████████████████████████
+// INPUTS — APPEARANCE BEARISH
+// ████████████████████████████████████████████████████████████████████████
+string BEAR_GROUP = '══════ Appearance — Bearish ══════'
+
+color  bearColor     = input.color(#F23645, 'Bearish SMT & CDDO Color', group=BEAR_GROUP)
+int    bearLineWidth = input.int(1, 'Bearish Line Width', minval=1, maxval=5, group=BEAR_GROUP)
+string bearLineStyle = input.string('Solid', 'Bearish Line Style', options=['Solid', 'Dashed', 'Dotted'], group=BEAR_GROUP)
+
+// ████████████████████████████████████████████████████████████████████████
+// INPUTS — CDDO + KVO (SIGNAL ENGINE ONLY)
+// ████████████████████████████████████████████████████████████████████████
+string CDDO_MODE_GROUP = '══════ CDDO-KVO Mode ══════'
+float blendWeightCDDO = input.float(0.60, 'Blend Weight CDDO', minval=0.0, maxval=1.0, step=0.05, group=CDDO_MODE_GROUP)
+
+string CDDO_SOURCE_GROUP = 'CDDO Lite Source'
+string srcMode    = input.string('Body Pressure', 'Proxy Delta Method', options=['Body Pressure', 'Close Location', 'Bar Direction'], group=CDDO_SOURCE_GROUP)
+bool   useCVD     = input.bool(true, 'Use Cumulative Delta', group=CDDO_SOURCE_GROUP)
+bool   resetDaily = input.bool(true, 'Reset Each Day', group=CDDO_SOURCE_GROUP)
+int    smoothLen  = input.int(8, 'CDDO EMA Smoothing', minval=1, group=CDDO_SOURCE_GROUP)
+int    zLenCDDO   = input.int(50, 'CDDO Z-Score Length', minval=5, group=CDDO_SOURCE_GROUP)
+
+string CDDO_KVO_GROUP = 'KVO Engine'
+int kvoFast      = input.int(34, 'KVO Fast EMA', minval=1, group=CDDO_KVO_GROUP)
+int kvoSlow      = input.int(55, 'KVO Slow EMA', minval=2, group=CDDO_KVO_GROUP)
+int kvoSignalLen = input.int(13, 'KVO Signal EMA', minval=1, group=CDDO_KVO_GROUP)
+int zLenKVO      = input.int(50, 'KVO Z-Score Length', minval=5, group=CDDO_KVO_GROUP)
+
+string CDDO_DIV_GROUP = 'CDDO Divergences'
+int   pivotLen           = input.int(5, 'Pivot Length', minval=1, maxval=20, group=CDDO_DIV_GROUP)
+int   minPivotSpacing    = input.int(5, 'Min Bars Between Pivots', minval=1, maxval=100, group=CDDO_DIV_GROUP)
+float pivotToleranceMult = input.float(3.0, 'Pivot Time Tolerance Multiplier', minval=1.0, step=0.5, group=CDDO_DIV_GROUP)
+float minOscSwing        = input.float(0.15, 'Min Oscillator Swing', minval=0.0, step=0.05, group=CDDO_DIV_GROUP)
+
+string CDDO_EXT_GROUP = 'CDDO Extended / Manual-Style Detection'
+int   scanBackPairs      = input.int(8, 'Scan Back Prior Paired Swings', minval=1, maxval=30, group=CDDO_EXT_GROUP)
+int   maxStoredPairs     = input.int(30, 'Max Stored Paired Swings', minval=10, maxval=100, group=CDDO_EXT_GROUP)
+int   priceToleranceTicks = input.int(8, 'Price Equal Tolerance (ticks)', minval=0, maxval=100, group=CDDO_EXT_GROUP)
+float oscTolerance        = input.float(0.12, 'Oscillator Equal Tolerance', minval=0.0, step=0.01, group=CDDO_EXT_GROUP)
+
+string CDDO_FILTER_GROUP = 'CDDO Filters'
+bool  useExtremeFilter = input.bool(true, 'Require Extreme Zone', group=CDDO_FILTER_GROUP)
+float extremeLevel     = input.float(1.0, 'Extreme Z-Score Level', minval=0.1, step=0.1, group=CDDO_FILTER_GROUP)
+bool  useTrendFilter   = input.bool(false, 'Use EMA Trend Filter', group=CDDO_FILTER_GROUP)
+int   emaLen           = input.int(50, 'Trend EMA Length', minval=1, group=CDDO_FILTER_GROUP)
+
+string CDDO_NOISE_GROUP = 'CDDO 1-Min Noise Filters'
+bool  useVolumeFilter   = input.bool(true, 'Volume Gate — Require Above-Avg Volume At Pivot', group=CDDO_NOISE_GROUP)
+float volMultiplier     = input.float(1.2, 'Volume Threshold Multiplier', minval=0.5, maxval=5.0, step=0.1, group=CDDO_NOISE_GROUP)
+int   volLookbackLen    = input.int(20, 'Volume SMA Length', minval=5, maxval=100, group=CDDO_NOISE_GROUP)
+bool  useATRSwingFilter = input.bool(true, 'ATR Swing Gate — Require Meaningful Price Swing', group=CDDO_NOISE_GROUP)
+float minATRSwing       = input.float(0.5, 'Min Price Swing (ATR multiples)', minval=0.0, maxval=5.0, step=0.1, group=CDDO_NOISE_GROUP)
+int   signalCooldown    = input.int(0, 'Signal Cooldown (bars)', minval=0, maxval=100, group=CDDO_NOISE_GROUP)
+bool  waitForClose      = input.bool(true, 'Wait For Bar Close (Anti-Repaint)', group=CDDO_NOISE_GROUP)
+float minZSwing         = input.float(0.4, 'Min Z-Score Swing Between Legs', minval=0.0, maxval=3.0, step=0.05, group=CDDO_NOISE_GROUP)
+
+string CDDO_STRENGTH_GROUP = 'CDDO Signal Strength (10-Point Grading)'
+int   minSwingBars    = input.int(15, 'Min Swing Depth (bars)', minval=1, maxval=100, group=CDDO_STRENGTH_GROUP)
+float surgeMult       = input.float(1.8, 'Volume Surge Multiplier', minval=1.0, maxval=5.0, step=0.1, group=CDDO_STRENGTH_GROUP)
+bool  useCandleConfirm = input.bool(true, 'Candle Confirmation (Engulfing / Pin Bar)', group=CDDO_STRENGTH_GROUP)
+float engineSpreadMax  = input.float(1.0, 'Max Engine Z-Score Spread', minval=0.1, maxval=3.0, step=0.1, group=CDDO_STRENGTH_GROUP)
+bool  useSlopeAlign    = input.bool(false, 'Trend Slope Alignment', group=CDDO_STRENGTH_GROUP)
+int   slopeLen         = input.int(5, 'Slope Lookback', minval=1, maxval=20, group=CDDO_STRENGTH_GROUP)
+
+// ████████████████████████████████████████████████████████████████████████
+// RESOLVED STYLES — pre-computed once (var)
+// ████████████████████████████████████████████████████████████████████████
+var string bullStyleEnum = switch bullLineStyle
+    'Solid'  => line.style_solid
+    'Dashed' => line.style_dashed
+    'Dotted' => line.style_dotted
+    => line.style_solid
+
+var string bearStyleEnum = switch bearLineStyle
+    'Solid'  => line.style_solid
+    'Dashed' => line.style_dashed
+    'Dotted' => line.style_dotted
+    => line.style_solid
+
+// PRE-COMPUTED COLORS
+var float invAlpha      = color.t(invalidColor)
+var color fadedText     = color.new(color.white, invAlpha)
+
+// CDDO constants and pre-computed values
+var float priceTol        = priceToleranceTicks * syminfo.mintick
+var float negExtremeLevel = -extremeLevel
+var int   pairTolerance   = math.round(pivotLen * pivotToleranceMult)
+var float blendWeightKVO  = 1.0 - blendWeightCDDO
+var bool  needEma         = useTrendFilter or useSlopeAlign
+
+var int GRADE_ELITE    = 8
+var int GRADE_STRONG   = 5
+var int GRADE_MODERATE = 3
+
+var string TIER_REG_1 = ' ◆'
+var string TIER_REG_2 = ' ◆◆'
+var string TIER_REG_3 = ' ◆◆◆'
+var string TIER_HID_1 = ' ◇'
+var string TIER_HID_2 = ' ◇◇'
+var string TIER_HID_3 = ' ◇◇◇'
+
+f_higher_or_equal(float cur, float prev, float tol) =>
+    cur >= prev - tol
+
+f_lower_or_equal(float cur, float prev, float tol) =>
+    cur <= prev + tol
+
+// Realtime mode: mark prior closed bar as a pivot if it beats the left-side lookback.
+f_rt_pivothigh(float src, int leftBars) =>
+    bool enough = leftBars > 0 and not na(src[leftBars + 1])
+    float leftMax = enough ? ta.highest(src[2], leftBars) : na
+    enough and src[1] > leftMax ? src[1] : na
+
+f_rt_pivotlow(float src, int leftBars) =>
+    bool enough = leftBars > 0 and not na(src[leftBars + 1])
+    float leftMin = enough ? ta.lowest(src[2], leftBars) : na
+    enough and src[1] < leftMin ? src[1] : na
+
+f_smt_pivothigh(float src, int leftBars, int rightBars) =>
+    rightBars == 0 ? f_rt_pivothigh(src, leftBars) : ta.pivothigh(src, leftBars, rightBars)
+
+f_smt_pivotlow(float src, int leftBars, int rightBars) =>
+    rightBars == 0 ? f_rt_pivotlow(src, leftBars) : ta.pivotlow(src, leftBars, rightBars)
+
+f_smt_pivot_offset(int rightBars) =>
+    rightBars == 0 ? 1 : rightBars
+
+f_pivothigh(float src, int len) =>
+    useRealtimePivots ? f_rt_pivothigh(src, len) : ta.pivothigh(src, len, len)
+
+f_pivotlow(float src, int len) =>
+    useRealtimePivots ? f_rt_pivotlow(src, len) : ta.pivotlow(src, len, len)
+
+f_pivot_offset(int len) =>
+    useRealtimePivots ? 1 : len
+
+f_push_pair(array<int> _bars, array<float> _priceRaw, array<float> _oscRaw, int _bar, float _p, float _o, int _maxSize) =>
+    int sz = array.size(_bars)
+    bool added = sz == 0 or array.get(_bars, sz - 1) != _bar
+    if added
+        array.push(_bars, _bar)
+        array.push(_priceRaw, _p)
+        array.push(_oscRaw, _o)
+        if array.size(_bars) > _maxSize
+            array.shift(_bars)
+            array.shift(_priceRaw)
+            array.shift(_oscRaw)
+    added
+
+f_bullish_candle(int offset) =>
+    float o = open[offset], float c = close[offset]
+    float h = high[offset], float l = low[offset]
+    float po = open[offset + 1], float pc = close[offset + 1]
+    float body = math.abs(c - o)
+    float rng = math.max(h - l, syminfo.mintick)
+    float lowerWick = math.min(o, c) - l
+    float upperWick = h - math.max(o, c)
+    bool engulfing = c > o and pc < po and c > po and o < pc
+    bool hammer = lowerWick >= body * 2.0 and upperWick < body * 0.5 and body > 0
+    bool pinBar = lowerWick / rng >= 0.66
+    engulfing or hammer or pinBar
+
+f_bearish_candle(int offset) =>
+    float o = open[offset], float c = close[offset]
+    float h = high[offset], float l = low[offset]
+    float po = open[offset + 1], float pc = close[offset + 1]
+    float body = math.abs(c - o)
+    float rng = math.max(h - l, syminfo.mintick)
+    float lowerWick = math.min(o, c) - l
+    float upperWick = h - math.max(o, c)
+    bool engulfing = c < o and pc > po and c < po and o > pc
+    bool shootingStar = upperWick >= body * 2.0 and lowerWick < body * 0.5 and body > 0
+    bool pinBar = upperWick / rng >= 0.66
+    engulfing or shootingStar or pinBar
+
+f_tier_label_reg(int grade) =>
+    grade >= GRADE_ELITE ? TIER_REG_3 : grade >= GRADE_STRONG ? TIER_REG_2 : TIER_REG_1
+
+f_tier_label_hid(int grade) =>
+    grade >= GRADE_ELITE ? TIER_HID_3 : grade >= GRADE_STRONG ? TIER_HID_2 : TIER_HID_1
+
+// PRE-COMPUTED TICKER STRINGS — avoid re-parsing every f_checkSMT call
+var string chartRoot = str.upper(syminfo.root)
+var bool chartIsES = chartRoot == 'ES' or chartRoot == 'MES'
+var bool chartIsNQ = chartRoot == 'NQ' or chartRoot == 'MNQ'
+var string sym1Resolved = sym1AutoESNQ ? (chartIsES ? 'CME_MINI:NQ1!' : chartIsNQ ? 'CME_MINI:ES1!' : sym1Input) : sym1Input
+
+var string sym1Short = f_ticker(sym1Resolved)
+var string sym2Short = f_ticker(sym2Input)
+var string sym3Short = f_ticker(sym3Input)
+
+// ████████████████████████████████████████████████████████████████████████
+// REFERENCE SYMBOL DATA (NON-REPAINT) — tuple returns: 3 calls instead of 6
+// ████████████████████████████████████████████████████████████████████████
+float ref1H = na, float ref1L = na
+float ref2H = na, float ref2L = na
+float ref3H = na, float ref3L = na
+if sym1On
+    [h1, l1] = request.security(sym1Resolved, timeframe.period, [high, low], barmerge.gaps_off, barmerge.lookahead_off)
+    ref1H := h1
+    ref1L := l1
+if sym2On
+    [h2, l2] = request.security(sym2Input, timeframe.period, [high, low], barmerge.gaps_off, barmerge.lookahead_off)
+    ref2H := h2
+    ref2L := l2
+if sym3On
+    [h3, l3] = request.security(sym3Input, timeframe.period, [high, low], barmerge.gaps_off, barmerge.lookahead_off)
+    ref3H := h3
+    ref3L := l3
+
+// ████████████████████████████████████████████████████████████████████████
+// PIVOT CALCULATIONS — CONDITIONAL by range toggle
+// Only compute pivots for ranges that are actually enabled
+// ████████████████████████████████████████████████████████████████████████
+// Determine which ranges are actually needed (any symbol using them)
+bool needR1 = range1On and (sym1On or sym2On or sym3On)
+bool needR2 = range2On and (sym1On or sym2On or sym3On)
+bool needR3 = range3On and (sym1On or sym2On or sym3On)
+
+// Range 1 — Micro: 2, 3, 5, 6, 8, 10
+float cPH_2  = needR1 ? f_smt_pivothigh(high, 2, smtRightBarsR1)   : na,   float cPL_2  = needR1 ? f_smt_pivotlow(low, 2, smtRightBarsR1)   : na
+float cPH_3  = needR1 ? f_smt_pivothigh(high, 3, smtRightBarsR1)   : na,   float cPL_3  = needR1 ? f_smt_pivotlow(low, 3, smtRightBarsR1)   : na
+float cPH_5  = needR1 ? f_smt_pivothigh(high, 5, smtRightBarsR1)   : na,   float cPL_5  = needR1 ? f_smt_pivotlow(low, 5, smtRightBarsR1)   : na
+float cPH_6  = needR1 ? f_smt_pivothigh(high, 6, smtRightBarsR1)   : na,   float cPL_6  = needR1 ? f_smt_pivotlow(low, 6, smtRightBarsR1)   : na
+float cPH_8  = needR1 ? f_smt_pivothigh(high, 8, smtRightBarsR1)   : na,   float cPL_8  = needR1 ? f_smt_pivotlow(low, 8, smtRightBarsR1)   : na
+float cPH_10 = needR1 ? f_smt_pivothigh(high, 10, smtRightBarsR1)  : na,   float cPL_10 = needR1 ? f_smt_pivotlow(low, 10, smtRightBarsR1)  : na
+// Range 2 — Intraday: 12, 14, 17, 20, 22, 25
+float cPH_12 = needR2 ? f_smt_pivothigh(high, 12, smtRightBarsR2) : na,   float cPL_12 = needR2 ? f_smt_pivotlow(low, 12, smtRightBarsR2) : na
+float cPH_14 = needR2 ? f_smt_pivothigh(high, 14, smtRightBarsR2) : na,   float cPL_14 = needR2 ? f_smt_pivotlow(low, 14, smtRightBarsR2) : na
+float cPH_17 = needR2 ? f_smt_pivothigh(high, 17, smtRightBarsR2) : na,   float cPL_17 = needR2 ? f_smt_pivotlow(low, 17, smtRightBarsR2) : na
+float cPH_20 = needR2 ? f_smt_pivothigh(high, 20, smtRightBarsR2) : na,   float cPL_20 = needR2 ? f_smt_pivotlow(low, 20, smtRightBarsR2) : na
+float cPH_22 = needR2 ? f_smt_pivothigh(high, 22, smtRightBarsR2) : na,   float cPL_22 = needR2 ? f_smt_pivotlow(low, 22, smtRightBarsR2) : na
+float cPH_25 = needR2 ? f_smt_pivothigh(high, 25, smtRightBarsR2) : na,   float cPL_25 = needR2 ? f_smt_pivotlow(low, 25, smtRightBarsR2) : na
+// Range 3 — Session: 30, 35, 40, 45, 50, 60
+float cPH_30 = needR3 ? f_smt_pivothigh(high, 30, smtRightBarsR3) : na,   float cPL_30 = needR3 ? f_smt_pivotlow(low, 30, smtRightBarsR3) : na
+float cPH_35 = needR3 ? f_smt_pivothigh(high, 35, smtRightBarsR3) : na,   float cPL_35 = needR3 ? f_smt_pivotlow(low, 35, smtRightBarsR3) : na
+float cPH_40 = needR3 ? f_smt_pivothigh(high, 40, smtRightBarsR3) : na,   float cPL_40 = needR3 ? f_smt_pivotlow(low, 40, smtRightBarsR3) : na
+float cPH_45 = needR3 ? f_smt_pivothigh(high, 45, smtRightBarsR3) : na,   float cPL_45 = needR3 ? f_smt_pivotlow(low, 45, smtRightBarsR3) : na
+float cPH_50 = needR3 ? f_smt_pivothigh(high, 50, smtRightBarsR3) : na,   float cPL_50 = needR3 ? f_smt_pivotlow(low, 50, smtRightBarsR3) : na
+float cPH_60 = needR3 ? f_smt_pivothigh(high, 60, smtRightBarsR3) : na,   float cPL_60 = needR3 ? f_smt_pivotlow(low, 60, smtRightBarsR3) : na
+
+// Ref1 pivots — conditional on sym1On + range toggles
+bool need1R1 = needR1 and sym1On,  bool need1R2 = needR2 and sym1On,  bool need1R3 = needR3 and sym1On
+float r1PH_2  = need1R1 ? f_smt_pivothigh(ref1H, 2, smtRightBarsR1)   : na,   float r1PL_2  = need1R1 ? f_smt_pivotlow(ref1L, 2, smtRightBarsR1)   : na
+float r1PH_3  = need1R1 ? f_smt_pivothigh(ref1H, 3, smtRightBarsR1)   : na,   float r1PL_3  = need1R1 ? f_smt_pivotlow(ref1L, 3, smtRightBarsR1)   : na
+float r1PH_5  = need1R1 ? f_smt_pivothigh(ref1H, 5, smtRightBarsR1)   : na,   float r1PL_5  = need1R1 ? f_smt_pivotlow(ref1L, 5, smtRightBarsR1)   : na
+float r1PH_6  = need1R1 ? f_smt_pivothigh(ref1H, 6, smtRightBarsR1)   : na,   float r1PL_6  = need1R1 ? f_smt_pivotlow(ref1L, 6, smtRightBarsR1)   : na
+float r1PH_8  = need1R1 ? f_smt_pivothigh(ref1H, 8, smtRightBarsR1)   : na,   float r1PL_8  = need1R1 ? f_smt_pivotlow(ref1L, 8, smtRightBarsR1)   : na
+float r1PH_10 = need1R1 ? f_smt_pivothigh(ref1H, 10, smtRightBarsR1)  : na,   float r1PL_10 = need1R1 ? f_smt_pivotlow(ref1L, 10, smtRightBarsR1)  : na
+float r1PH_12 = need1R2 ? f_smt_pivothigh(ref1H, 12, smtRightBarsR2)  : na,   float r1PL_12 = need1R2 ? f_smt_pivotlow(ref1L, 12, smtRightBarsR2)  : na
+float r1PH_14 = need1R2 ? f_smt_pivothigh(ref1H, 14, smtRightBarsR2)  : na,   float r1PL_14 = need1R2 ? f_smt_pivotlow(ref1L, 14, smtRightBarsR2)  : na
+float r1PH_17 = need1R2 ? f_smt_pivothigh(ref1H, 17, smtRightBarsR2)  : na,   float r1PL_17 = need1R2 ? f_smt_pivotlow(ref1L, 17, smtRightBarsR2)  : na
+float r1PH_20 = need1R2 ? f_smt_pivothigh(ref1H, 20, smtRightBarsR2)  : na,   float r1PL_20 = need1R2 ? f_smt_pivotlow(ref1L, 20, smtRightBarsR2)  : na
+float r1PH_22 = need1R2 ? f_smt_pivothigh(ref1H, 22, smtRightBarsR2)  : na,   float r1PL_22 = need1R2 ? f_smt_pivotlow(ref1L, 22, smtRightBarsR2)  : na
+float r1PH_25 = need1R2 ? f_smt_pivothigh(ref1H, 25, smtRightBarsR2)  : na,   float r1PL_25 = need1R2 ? f_smt_pivotlow(ref1L, 25, smtRightBarsR2)  : na
+float r1PH_30 = need1R3 ? f_smt_pivothigh(ref1H, 30, smtRightBarsR3)  : na,   float r1PL_30 = need1R3 ? f_smt_pivotlow(ref1L, 30, smtRightBarsR3)  : na
+float r1PH_35 = need1R3 ? f_smt_pivothigh(ref1H, 35, smtRightBarsR3)  : na,   float r1PL_35 = need1R3 ? f_smt_pivotlow(ref1L, 35, smtRightBarsR3)  : na
+float r1PH_40 = need1R3 ? f_smt_pivothigh(ref1H, 40, smtRightBarsR3)  : na,   float r1PL_40 = need1R3 ? f_smt_pivotlow(ref1L, 40, smtRightBarsR3)  : na
+float r1PH_45 = need1R3 ? f_smt_pivothigh(ref1H, 45, smtRightBarsR3)  : na,   float r1PL_45 = need1R3 ? f_smt_pivotlow(ref1L, 45, smtRightBarsR3)  : na
+float r1PH_50 = need1R3 ? f_smt_pivothigh(ref1H, 50, smtRightBarsR3)  : na,   float r1PL_50 = need1R3 ? f_smt_pivotlow(ref1L, 50, smtRightBarsR3)  : na
+float r1PH_60 = need1R3 ? f_smt_pivothigh(ref1H, 60, smtRightBarsR3)  : na,   float r1PL_60 = need1R3 ? f_smt_pivotlow(ref1L, 60, smtRightBarsR3)  : na
+
+// Ref2 pivots — conditional on sym2On + range toggles
+bool need2R1 = needR1 and sym2On,  bool need2R2 = needR2 and sym2On,  bool need2R3 = needR3 and sym2On
+float r2PH_2  = need2R1 ? f_smt_pivothigh(ref2H, 2, smtRightBarsR1)   : na,   float r2PL_2  = need2R1 ? f_smt_pivotlow(ref2L, 2, smtRightBarsR1)   : na
+float r2PH_3  = need2R1 ? f_smt_pivothigh(ref2H, 3, smtRightBarsR1)   : na,   float r2PL_3  = need2R1 ? f_smt_pivotlow(ref2L, 3, smtRightBarsR1)   : na
+float r2PH_5  = need2R1 ? f_smt_pivothigh(ref2H, 5, smtRightBarsR1)   : na,   float r2PL_5  = need2R1 ? f_smt_pivotlow(ref2L, 5, smtRightBarsR1)   : na
+float r2PH_6  = need2R1 ? f_smt_pivothigh(ref2H, 6, smtRightBarsR1)   : na,   float r2PL_6  = need2R1 ? f_smt_pivotlow(ref2L, 6, smtRightBarsR1)   : na
+float r2PH_8  = need2R1 ? f_smt_pivothigh(ref2H, 8, smtRightBarsR1)   : na,   float r2PL_8  = need2R1 ? f_smt_pivotlow(ref2L, 8, smtRightBarsR1)   : na
+float r2PH_10 = need2R1 ? f_smt_pivothigh(ref2H, 10, smtRightBarsR1)  : na,   float r2PL_10 = need2R1 ? f_smt_pivotlow(ref2L, 10, smtRightBarsR1)  : na
+float r2PH_12 = need2R2 ? f_smt_pivothigh(ref2H, 12, smtRightBarsR2)  : na,   float r2PL_12 = need2R2 ? f_smt_pivotlow(ref2L, 12, smtRightBarsR2)  : na
+float r2PH_14 = need2R2 ? f_smt_pivothigh(ref2H, 14, smtRightBarsR2)  : na,   float r2PL_14 = need2R2 ? f_smt_pivotlow(ref2L, 14, smtRightBarsR2)  : na
+float r2PH_17 = need2R2 ? f_smt_pivothigh(ref2H, 17, smtRightBarsR2)  : na,   float r2PL_17 = need2R2 ? f_smt_pivotlow(ref2L, 17, smtRightBarsR2)  : na
+float r2PH_20 = need2R2 ? f_smt_pivothigh(ref2H, 20, smtRightBarsR2)  : na,   float r2PL_20 = need2R2 ? f_smt_pivotlow(ref2L, 20, smtRightBarsR2)  : na
+float r2PH_22 = need2R2 ? f_smt_pivothigh(ref2H, 22, smtRightBarsR2)  : na,   float r2PL_22 = need2R2 ? f_smt_pivotlow(ref2L, 22, smtRightBarsR2)  : na
+float r2PH_25 = need2R2 ? f_smt_pivothigh(ref2H, 25, smtRightBarsR2)  : na,   float r2PL_25 = need2R2 ? f_smt_pivotlow(ref2L, 25, smtRightBarsR2)  : na
+float r2PH_30 = need2R3 ? f_smt_pivothigh(ref2H, 30, smtRightBarsR3)  : na,   float r2PL_30 = need2R3 ? f_smt_pivotlow(ref2L, 30, smtRightBarsR3)  : na
+float r2PH_35 = need2R3 ? f_smt_pivothigh(ref2H, 35, smtRightBarsR3)  : na,   float r2PL_35 = need2R3 ? f_smt_pivotlow(ref2L, 35, smtRightBarsR3)  : na
+float r2PH_40 = need2R3 ? f_smt_pivothigh(ref2H, 40, smtRightBarsR3)  : na,   float r2PL_40 = need2R3 ? f_smt_pivotlow(ref2L, 40, smtRightBarsR3)  : na
+float r2PH_45 = need2R3 ? f_smt_pivothigh(ref2H, 45, smtRightBarsR3)  : na,   float r2PL_45 = need2R3 ? f_smt_pivotlow(ref2L, 45, smtRightBarsR3)  : na
+float r2PH_50 = need2R3 ? f_smt_pivothigh(ref2H, 50, smtRightBarsR3)  : na,   float r2PL_50 = need2R3 ? f_smt_pivotlow(ref2L, 50, smtRightBarsR3)  : na
+float r2PH_60 = need2R3 ? f_smt_pivothigh(ref2H, 60, smtRightBarsR3)  : na,   float r2PL_60 = need2R3 ? f_smt_pivotlow(ref2L, 60, smtRightBarsR3)  : na
+
+// Ref3 pivots — conditional on sym3On + range toggles
+bool need3R1 = needR1 and sym3On,  bool need3R2 = needR2 and sym3On,  bool need3R3 = needR3 and sym3On
+float r3PH_2  = need3R1 ? f_smt_pivothigh(ref3H, 2, smtRightBarsR1)   : na,   float r3PL_2  = need3R1 ? f_smt_pivotlow(ref3L, 2, smtRightBarsR1)   : na
+float r3PH_3  = need3R1 ? f_smt_pivothigh(ref3H, 3, smtRightBarsR1)   : na,   float r3PL_3  = need3R1 ? f_smt_pivotlow(ref3L, 3, smtRightBarsR1)   : na
+float r3PH_5  = need3R1 ? f_smt_pivothigh(ref3H, 5, smtRightBarsR1)   : na,   float r3PL_5  = need3R1 ? f_smt_pivotlow(ref3L, 5, smtRightBarsR1)   : na
+float r3PH_6  = need3R1 ? f_smt_pivothigh(ref3H, 6, smtRightBarsR1)   : na,   float r3PL_6  = need3R1 ? f_smt_pivotlow(ref3L, 6, smtRightBarsR1)   : na
+float r3PH_8  = need3R1 ? f_smt_pivothigh(ref3H, 8, smtRightBarsR1)   : na,   float r3PL_8  = need3R1 ? f_smt_pivotlow(ref3L, 8, smtRightBarsR1)   : na
+float r3PH_10 = need3R1 ? f_smt_pivothigh(ref3H, 10, smtRightBarsR1)  : na,   float r3PL_10 = need3R1 ? f_smt_pivotlow(ref3L, 10, smtRightBarsR1)  : na
+float r3PH_12 = need3R2 ? f_smt_pivothigh(ref3H, 12, smtRightBarsR2)  : na,   float r3PL_12 = need3R2 ? f_smt_pivotlow(ref3L, 12, smtRightBarsR2)  : na
+float r3PH_14 = need3R2 ? f_smt_pivothigh(ref3H, 14, smtRightBarsR2)  : na,   float r3PL_14 = need3R2 ? f_smt_pivotlow(ref3L, 14, smtRightBarsR2)  : na
+float r3PH_17 = need3R2 ? f_smt_pivothigh(ref3H, 17, smtRightBarsR2)  : na,   float r3PL_17 = need3R2 ? f_smt_pivotlow(ref3L, 17, smtRightBarsR2)  : na
+float r3PH_20 = need3R2 ? f_smt_pivothigh(ref3H, 20, smtRightBarsR2)  : na,   float r3PL_20 = need3R2 ? f_smt_pivotlow(ref3L, 20, smtRightBarsR2)  : na
+float r3PH_22 = need3R2 ? f_smt_pivothigh(ref3H, 22, smtRightBarsR2)  : na,   float r3PL_22 = need3R2 ? f_smt_pivotlow(ref3L, 22, smtRightBarsR2)  : na
+float r3PH_25 = need3R2 ? f_smt_pivothigh(ref3H, 25, smtRightBarsR2)  : na,   float r3PL_25 = need3R2 ? f_smt_pivotlow(ref3L, 25, smtRightBarsR2)  : na
+float r3PH_30 = need3R3 ? f_smt_pivothigh(ref3H, 30, smtRightBarsR3)  : na,   float r3PL_30 = need3R3 ? f_smt_pivotlow(ref3L, 30, smtRightBarsR3)  : na
+float r3PH_35 = need3R3 ? f_smt_pivothigh(ref3H, 35, smtRightBarsR3)  : na,   float r3PL_35 = need3R3 ? f_smt_pivotlow(ref3L, 35, smtRightBarsR3)  : na
+float r3PH_40 = need3R3 ? f_smt_pivothigh(ref3H, 40, smtRightBarsR3)  : na,   float r3PL_40 = need3R3 ? f_smt_pivotlow(ref3L, 40, smtRightBarsR3)  : na
+float r3PH_45 = need3R3 ? f_smt_pivothigh(ref3H, 45, smtRightBarsR3)  : na,   float r3PL_45 = need3R3 ? f_smt_pivotlow(ref3L, 45, smtRightBarsR3)  : na
+float r3PH_50 = need3R3 ? f_smt_pivothigh(ref3H, 50, smtRightBarsR3)  : na,   float r3PL_50 = need3R3 ? f_smt_pivotlow(ref3L, 50, smtRightBarsR3)  : na
+float r3PH_60 = need3R3 ? f_smt_pivothigh(ref3H, 60, smtRightBarsR3)  : na,   float r3PL_60 = need3R3 ? f_smt_pivotlow(ref3L, 60, smtRightBarsR3)  : na
+
+// ████████████████████████████████████████████████████████████████████████
+// UDT: Unified SMT + CDDO bubble
+// ████████████████████████████████████████████████████████████████████████
+type SMTSignal
+    int    barIdx
+    float  pivotPrice
+    bool   isBear
+    string symName
+    int    pivotLen
+    label  lbl
+    line   ln
+    bool   invalidated
+    bool   hasSMT
+    bool   hasCDDO
+    string smtText
+    string cddoText
+    float  smtPivotPrice
+    float  cddoPivotPrice
+    bool   smtInvalidated
+    bool   cddoInvalidated
+    bool   removed
+
+var array<SMTSignal> signals = array.new<SMTSignal>()
+
+// ████████████████████████████████████████████████████████████████████████
+// STATE MAPS — persist last/prev pivots per (symbol, length) combo
+// ████████████████████████████████████████████████████████████████████████
+var map<string, float> lastPH  = map.new<string, float>()
+var map<string, float> prevPH  = map.new<string, float>()
+var map<string, int>   lastPHi = map.new<string, int>()
+var map<string, int>   prevPHi = map.new<string, int>()
+var map<string, float> lastPL  = map.new<string, float>()
+var map<string, float> prevPL  = map.new<string, float>()
+var map<string, int>   lastPLi = map.new<string, int>()
+var map<string, int>   prevPLi = map.new<string, int>()
+var map<string, float> rLastPH  = map.new<string, float>()
+var map<string, float> rPrevPH  = map.new<string, float>()
+var map<string, int>   rLastPHi = map.new<string, int>()
+var map<string, int>   rPrevPHi = map.new<string, int>()
+var map<string, float> rLastPL  = map.new<string, float>()
+var map<string, float> rPrevPL  = map.new<string, float>()
+var map<string, int>   rLastPLi = map.new<string, int>()
+var map<string, int>   rPrevPLi = map.new<string, int>()
+
+// Dedup + merged bubble state
+var map<string, int>    dedupCount   = map.new<string, int>()
+var map<string, string> dedupSyms    = map.new<string, string>()
+var map<string, int>    dedupSeenBar = map.new<string, int>()
+var map<string, int>    signalIdxKey = map.new<string, int>()
+var array<int>          signalOrder  = array.new_int()
+var array<int>          activeSignals = array.new_int()
+var array<int>          smtHistoryEarly = array.new_int()
+var array<int>          smtHistoryConf  = array.new_int()
+
+if barstate.isnew
+    map.clear(dedupSeenBar)
+
+f_remove_active_index(int idx) =>
+    int activeCount = array.size(activeSignals)
+    if activeCount > 0
+        for i = activeCount - 1 to 0
+            if array.get(activeSignals, i) == idx
+                array.remove(activeSignals, i)
+                break
+
+f_bubble_key(int barIdx, bool isBear, string stageTag) =>
+    str.tostring(barIdx) + '_' + stageTag + (isBear ? '_B' : '_U')
+
+f_dedup_tick_key(string bubbleKey, string shortSym) =>
+    bubbleKey + '_' + shortSym
+
+f_bubble_color(bool isBear) =>
+    isBear ? bearColor : bullColor
+
+f_bubble_text_color(bool isBear) =>
+    color.new(color.white, color.t(isBear ? bearColor : bullColor))
+
+f_bubble_style(bool isBear) =>
+    isBear ? label.style_label_down : label.style_label_up
+
+f_compose_label_text(SMTSignal sig) =>
+    sig.hasSMT and sig.hasCDDO ? sig.smtText + '\n' + sig.cddoText : sig.hasSMT ? sig.smtText : sig.cddoText
+
+f_signal_y(SMTSignal sig) =>
+    sig.hasSMT and not na(sig.smtPivotPrice) ? sig.smtPivotPrice : sig.cddoPivotPrice
+
+f_refresh_signal_visual(int idx) =>
+    SMTSignal sig = array.get(signals, idx)
+    if not sig.removed
+        color activeColor = f_bubble_color(sig.isBear)
+        color activeTextColor = f_bubble_text_color(sig.isBear)
+        if not na(sig.lbl)
+            label.set_text(sig.lbl, f_compose_label_text(sig))
+            label.set_x(sig.lbl, sig.barIdx)
+            float y = f_signal_y(sig)
+            if not na(y)
+                label.set_y(sig.lbl, y)
+            label.set_style(sig.lbl, f_bubble_style(sig.isBear))
+            label.set_size(sig.lbl, resolvedLblSize)
+            if sig.invalidated
+                label.set_color(sig.lbl, invalidColor)
+                label.set_textcolor(sig.lbl, fadedText)
+            else
+                label.set_color(sig.lbl, activeColor)
+                label.set_textcolor(sig.lbl, activeTextColor)
+        if not na(sig.ln)
+            if sig.invalidated
+                line.set_color(sig.ln, invalidColor)
+            else
+                line.set_color(sig.ln, activeColor)
+
+f_get_or_create_signal(string sigKey, int barIdx, float y, bool isBear) =>
+    int idx = na
+    if signalIdxKey.contains(sigKey)
+        idx := signalIdxKey.get(sigKey)
+    else
+        label lbl = label.new(barIdx, y, '',
+             color=f_bubble_color(isBear), style=f_bubble_style(isBear),
+             textcolor=f_bubble_text_color(isBear), size=resolvedLblSize)
+        signals.push(SMTSignal.new(barIdx, y, isBear, '', 0, lbl, na, false, false, false, '', '', na, na, false, false, false))
+        idx := array.size(signals) - 1
+        signalIdxKey.put(sigKey, idx)
+        array.push(signalOrder, idx)
+        array.push(activeSignals, idx)
+    idx
+
+f_register_cddo(int barIdx, float pivotPrice, bool isBear, string cddoText) =>
+    string sigKey = f_bubble_key(barIdx, isBear, 'C')
+    int idx = f_get_or_create_signal(sigKey, barIdx, pivotPrice, isBear)
+    SMTSignal sig = array.get(signals, idx)
+    if not sig.removed
+        sig.barIdx := barIdx
+        sig.isBear := isBear
+        sig.hasCDDO := true
+        sig.cddoText := cddoText
+        sig.cddoPivotPrice := pivotPrice
+        sig.cddoInvalidated := false
+        if not sig.hasSMT
+            sig.pivotPrice := pivotPrice
+        sig.invalidated := (sig.hasSMT and sig.smtInvalidated) or (sig.hasCDDO and sig.cddoInvalidated)
+        array.set(signals, idx, sig)
+        f_refresh_signal_visual(idx)
+
+// ████████████████████████████████████████████████████████████████████████
+// CORE FUNCTIONS
+// ████████████████████████████████████████████████████████████████████████
+f_updatePivots(string key, float cPH, float cPL, float rPH, float rPL, int pivotOffset) =>
+    int pivotBar = bar_index - pivotOffset
+    if not na(cPH)
+        prevPH.put(key,  lastPH.get(key)),  prevPHi.put(key, lastPHi.get(key))
+        lastPH.put(key,  cPH),              lastPHi.put(key, pivotBar)
+    if not na(cPL)
+        prevPL.put(key,  lastPL.get(key)),  prevPLi.put(key, lastPLi.get(key))
+        lastPL.put(key,  cPL),              lastPLi.put(key, pivotBar)
+    if not na(rPH)
+        rPrevPH.put(key,  rLastPH.get(key)),  rPrevPHi.put(key, rLastPHi.get(key))
+        rLastPH.put(key,  rPH),               rLastPHi.put(key, pivotBar)
+    if not na(rPL)
+        rPrevPL.put(key,  rLastPL.get(key)),  rPrevPLi.put(key, rLastPLi.get(key))
+        rLastPL.put(key,  rPL),               rLastPLi.put(key, pivotBar)
+
+// Consolidated SMT check — keeps original signal math and star logic
+f_checkSMT(string key, string shortSym, int pLen, float cPH, float cPL, float rPH, float rPL, string stageTag, bool isConfirmedStage) =>
+    bool smtBarConfirmed = not waitForClose or barstate.isconfirmed
+    bool newChartHigh = not na(cPH)
+    bool newChartLow  = not na(cPL)
+    bool newRefHigh   = not na(rPH)
+    bool newRefLow    = not na(rPL)
+    string stageSuffix = isConfirmedStage ? ' [CONF]' : ' [EARLY]'
+    if smtBarConfirmed
+        // BEARISH SMT: one market makes HH while the other makes LH
+        if newChartHigh or newRefHigh
+            float cLPH = lastPH.get(key),  float cPPH = prevPH.get(key)
+            int   cLPHi = lastPHi.get(key), int cPPHi = prevPHi.get(key)
+            float rLPH = rLastPH.get(key), float rPPH = rPrevPH.get(key)
+            int   rLPHi = rLastPHi.get(key)
+            if not na(cLPH) and not na(cPPH) and not na(rLPH) and not na(rPPH) and not na(cLPHi) and not na(rLPHi)
+                int skew = math.abs(cLPHi - rLPHi)
+                bool bearStruct = (cLPH > cPPH and rLPH < rPPH) or (cLPH < cPPH and rLPH > rPPH)
+                if skew <= smtMaxSkew and bearStruct
+                    string dk = f_bubble_key(cLPHi, true, stageTag)
+                    string tickKey = f_dedup_tick_key(dk, shortSym)
+                    int hits = dedupCount.contains(dk) ? nz(dedupCount.get(dk)) : 0
+                    bool countedThisBar = dedupSeenBar.contains(tickKey) and dedupSeenBar.get(tickKey) == bar_index
+                    if not countedThisBar
+                        hits += 1
+                        dedupCount.put(dk, hits)
+                        dedupSeenBar.put(tickKey, bar_index)
+
+                    string firstSym = dedupSyms.contains(dk) ? dedupSyms.get(dk) : shortSym
+                    if not dedupSyms.contains(dk)
+                        dedupSyms.put(dk, shortSym)
+
+                    string stars = hits >= 4 ? ' ★★★' : hits >= 3 ? ' ★★' : hits >= 2 ? ' ★' : ''
+                    string smtText = firstSym + stars + stageSuffix
+
+                    int idx = f_get_or_create_signal(dk, cLPHi, cLPH, true)
+                    SMTSignal sig = array.get(signals, idx)
+                    if not sig.removed
+                        sig.barIdx := cLPHi
+                        sig.pivotPrice := cLPH
+                        sig.isBear := true
+                        sig.symName := shortSym
+                        sig.pivotLen := pLen
+                        sig.hasSMT := true
+                        sig.smtText := smtText
+                        sig.smtPivotPrice := cLPH
+                        sig.smtInvalidated := false
+                        if na(sig.ln) and not na(cPPHi)
+                            sig.ln := line.new(cPPHi, cPPH, cLPHi, cLPH, xloc=xloc.bar_index,
+                                 color=bearColor, style=bearStyleEnum, width=bearLineWidth)
+                        sig.invalidated := (sig.hasSMT and sig.smtInvalidated) or (sig.hasCDDO and sig.cddoInvalidated)
+                        array.set(signals, idx, sig)
+                        f_refresh_signal_visual(idx)
+                        if hits == 1
+                            if isConfirmedStage
+                                array.push(smtHistoryConf, idx)
+                                if array.size(smtHistoryConf) > 300
+                                    array.shift(smtHistoryConf)
+                            else
+                                array.push(smtHistoryEarly, idx)
+                                if array.size(smtHistoryEarly) > 300
+                                    array.shift(smtHistoryEarly)
+
+        // BULLISH SMT: one market makes LL while the other makes HL
+        if newChartLow or newRefLow
+            float cLPL = lastPL.get(key),  float cPPL = prevPL.get(key)
+            int   cLPLi = lastPLi.get(key), int cPPLi = prevPLi.get(key)
+            float rLPL = rLastPL.get(key), float rPPL = rPrevPL.get(key)
+            int   rLPLi = rLastPLi.get(key)
+            if not na(cLPL) and not na(cPPL) and not na(rLPL) and not na(rPPL) and not na(cLPLi) and not na(rLPLi)
+                int skew = math.abs(cLPLi - rLPLi)
+                bool bullStruct = (cLPL < cPPL and rLPL > rPPL) or (cLPL > cPPL and rLPL < rPPL)
+                if skew <= smtMaxSkew and bullStruct
+                    string dk = f_bubble_key(cLPLi, false, stageTag)
+                    string tickKey = f_dedup_tick_key(dk, shortSym)
+                    int hits = dedupCount.contains(dk) ? nz(dedupCount.get(dk)) : 0
+                    bool countedThisBar = dedupSeenBar.contains(tickKey) and dedupSeenBar.get(tickKey) == bar_index
+                    if not countedThisBar
+                        hits += 1
+                        dedupCount.put(dk, hits)
+                        dedupSeenBar.put(tickKey, bar_index)
+
+                    string firstSym = dedupSyms.contains(dk) ? dedupSyms.get(dk) : shortSym
+                    if not dedupSyms.contains(dk)
+                        dedupSyms.put(dk, shortSym)
+
+                    string stars = hits >= 4 ? ' ★★★' : hits >= 3 ? ' ★★' : hits >= 2 ? ' ★' : ''
+                    string smtText = firstSym + stars + stageSuffix
+
+                    int idx = f_get_or_create_signal(dk, cLPLi, cLPL, false)
+                    SMTSignal sig = array.get(signals, idx)
+                    if not sig.removed
+                        sig.barIdx := cLPLi
+                        sig.pivotPrice := cLPL
+                        sig.isBear := false
+                        sig.symName := shortSym
+                        sig.pivotLen := pLen
+                        sig.hasSMT := true
+                        sig.smtText := smtText
+                        sig.smtPivotPrice := cLPL
+                        sig.smtInvalidated := false
+                        if na(sig.ln) and not na(cPPLi)
+                            sig.ln := line.new(cPPLi, cPPL, cLPLi, cLPL, xloc=xloc.bar_index,
+                                 color=bullColor, style=bullStyleEnum, width=bullLineWidth)
+                        sig.invalidated := (sig.hasSMT and sig.smtInvalidated) or (sig.hasCDDO and sig.cddoInvalidated)
+                        array.set(signals, idx, sig)
+                        f_refresh_signal_visual(idx)
+                        if hits == 1
+                            if isConfirmedStage
+                                array.push(smtHistoryConf, idx)
+                                if array.size(smtHistoryConf) > 300
+                                    array.shift(smtHistoryConf)
+                            else
+                                array.push(smtHistoryEarly, idx)
+                                if array.size(smtHistoryEarly) > 300
+                                    array.shift(smtHistoryEarly)
+
+// Macro — passes pre-computed shortSym instead of full symbol string
+f_process(string key, string shortSym, int pLen, float cPH, float cPL, float rPH, float rPL, int pivotOffset, string stageTag, bool isConfirmedStage) =>
+    f_updatePivots(key, cPH, cPL, rPH, rPL, pivotOffset)
+    f_checkSMT(key, shortSym, pLen, cPH, cPL, rPH, rPL, stageTag, isConfirmedStage)
+
+f_process_pair(string keyBase, string shortSym, int pLen, float cPH, float cPL, float rPH, float rPL, float refH, float refL, int confOffset, bool runEarly) =>
+    if runEarly
+        f_process('E' + keyBase, shortSym, pLen,
+             f_smt_pivothigh(high, pLen, 0), f_smt_pivotlow(low, pLen, 0),
+             f_smt_pivothigh(refH, pLen, 0), f_smt_pivotlow(refL, pLen, 0),
+             1, 'E', false)
+    f_process('C' + keyBase, shortSym, pLen, cPH, cPL, rPH, rPL, confOffset, 'C', true)
+
+int smtOffsetR1 = f_smt_pivot_offset(smtRightBarsR1)
+int smtOffsetR2 = f_smt_pivot_offset(smtRightBarsR2)
+int smtOffsetR3 = f_smt_pivot_offset(smtRightBarsR3)
+bool runEarlyR1 = enableSMTEarly and smtRightBarsR1 > 0
+bool runEarlyR2 = enableSMTEarly and smtRightBarsR2 > 0
+bool runEarlyR3 = enableSMTEarly and smtRightBarsR3 > 0
+
+// ████████████████████████████████████████████████████████████████████████
+// PROCESS ALL COMBINATIONS — guarded by symbol + range toggles
+// ████████████████████████████████████████████████████████████████████████
+
+// ─── SYMBOL 1 ───
+if sym1On
+    if range1On
+        f_process_pair('A1', sym1Short, 2,  cPH_2,  cPL_2,  r1PH_2,  r1PL_2,  ref1H, ref1L, smtOffsetR1, runEarlyR1)
+        f_process_pair('A2', sym1Short, 3,  cPH_3,  cPL_3,  r1PH_3,  r1PL_3,  ref1H, ref1L, smtOffsetR1, runEarlyR1)
+        f_process_pair('A3', sym1Short, 5,  cPH_5,  cPL_5,  r1PH_5,  r1PL_5,  ref1H, ref1L, smtOffsetR1, runEarlyR1)
+        f_process_pair('A4', sym1Short, 6,  cPH_6,  cPL_6,  r1PH_6,  r1PL_6,  ref1H, ref1L, smtOffsetR1, runEarlyR1)
+        f_process_pair('A5', sym1Short, 8,  cPH_8,  cPL_8,  r1PH_8,  r1PL_8,  ref1H, ref1L, smtOffsetR1, runEarlyR1)
+        f_process_pair('A6', sym1Short, 10, cPH_10, cPL_10, r1PH_10, r1PL_10, ref1H, ref1L, smtOffsetR1, runEarlyR1)
+    if range2On
+        f_process_pair('A7',  sym1Short, 12, cPH_12, cPL_12, r1PH_12, r1PL_12, ref1H, ref1L, smtOffsetR2, runEarlyR2)
+        f_process_pair('A8',  sym1Short, 14, cPH_14, cPL_14, r1PH_14, r1PL_14, ref1H, ref1L, smtOffsetR2, runEarlyR2)
+        f_process_pair('A9',  sym1Short, 17, cPH_17, cPL_17, r1PH_17, r1PL_17, ref1H, ref1L, smtOffsetR2, runEarlyR2)
+        f_process_pair('A10', sym1Short, 20, cPH_20, cPL_20, r1PH_20, r1PL_20, ref1H, ref1L, smtOffsetR2, runEarlyR2)
+        f_process_pair('A11', sym1Short, 22, cPH_22, cPL_22, r1PH_22, r1PL_22, ref1H, ref1L, smtOffsetR2, runEarlyR2)
+        f_process_pair('A12', sym1Short, 25, cPH_25, cPL_25, r1PH_25, r1PL_25, ref1H, ref1L, smtOffsetR2, runEarlyR2)
+    if range3On
+        f_process_pair('A13', sym1Short, 30, cPH_30, cPL_30, r1PH_30, r1PL_30, ref1H, ref1L, smtOffsetR3, runEarlyR3)
+        f_process_pair('A14', sym1Short, 35, cPH_35, cPL_35, r1PH_35, r1PL_35, ref1H, ref1L, smtOffsetR3, runEarlyR3)
+        f_process_pair('A15', sym1Short, 40, cPH_40, cPL_40, r1PH_40, r1PL_40, ref1H, ref1L, smtOffsetR3, runEarlyR3)
+        f_process_pair('A16', sym1Short, 45, cPH_45, cPL_45, r1PH_45, r1PL_45, ref1H, ref1L, smtOffsetR3, runEarlyR3)
+        f_process_pair('A17', sym1Short, 50, cPH_50, cPL_50, r1PH_50, r1PL_50, ref1H, ref1L, smtOffsetR3, runEarlyR3)
+        f_process_pair('A18', sym1Short, 60, cPH_60, cPL_60, r1PH_60, r1PL_60, ref1H, ref1L, smtOffsetR3, runEarlyR3)
+
+// ─── SYMBOL 2 ───
+if sym2On
+    if range1On
+        f_process_pair('B1', sym2Short, 2,  cPH_2,  cPL_2,  r2PH_2,  r2PL_2,  ref2H, ref2L, smtOffsetR1, runEarlyR1)
+        f_process_pair('B2', sym2Short, 3,  cPH_3,  cPL_3,  r2PH_3,  r2PL_3,  ref2H, ref2L, smtOffsetR1, runEarlyR1)
+        f_process_pair('B3', sym2Short, 5,  cPH_5,  cPL_5,  r2PH_5,  r2PL_5,  ref2H, ref2L, smtOffsetR1, runEarlyR1)
+        f_process_pair('B4', sym2Short, 6,  cPH_6,  cPL_6,  r2PH_6,  r2PL_6,  ref2H, ref2L, smtOffsetR1, runEarlyR1)
+        f_process_pair('B5', sym2Short, 8,  cPH_8,  cPL_8,  r2PH_8,  r2PL_8,  ref2H, ref2L, smtOffsetR1, runEarlyR1)
+        f_process_pair('B6', sym2Short, 10, cPH_10, cPL_10, r2PH_10, r2PL_10, ref2H, ref2L, smtOffsetR1, runEarlyR1)
+    if range2On
+        f_process_pair('B7',  sym2Short, 12, cPH_12, cPL_12, r2PH_12, r2PL_12, ref2H, ref2L, smtOffsetR2, runEarlyR2)
+        f_process_pair('B8',  sym2Short, 14, cPH_14, cPL_14, r2PH_14, r2PL_14, ref2H, ref2L, smtOffsetR2, runEarlyR2)
+        f_process_pair('B9',  sym2Short, 17, cPH_17, cPL_17, r2PH_17, r2PL_17, ref2H, ref2L, smtOffsetR2, runEarlyR2)
+        f_process_pair('B10', sym2Short, 20, cPH_20, cPL_20, r2PH_20, r2PL_20, ref2H, ref2L, smtOffsetR2, runEarlyR2)
+        f_process_pair('B11', sym2Short, 22, cPH_22, cPL_22, r2PH_22, r2PL_22, ref2H, ref2L, smtOffsetR2, runEarlyR2)
+        f_process_pair('B12', sym2Short, 25, cPH_25, cPL_25, r2PH_25, r2PL_25, ref2H, ref2L, smtOffsetR2, runEarlyR2)
+    if range3On
+        f_process_pair('B13', sym2Short, 30, cPH_30, cPL_30, r2PH_30, r2PL_30, ref2H, ref2L, smtOffsetR3, runEarlyR3)
+        f_process_pair('B14', sym2Short, 35, cPH_35, cPL_35, r2PH_35, r2PL_35, ref2H, ref2L, smtOffsetR3, runEarlyR3)
+        f_process_pair('B15', sym2Short, 40, cPH_40, cPL_40, r2PH_40, r2PL_40, ref2H, ref2L, smtOffsetR3, runEarlyR3)
+        f_process_pair('B16', sym2Short, 45, cPH_45, cPL_45, r2PH_45, r2PL_45, ref2H, ref2L, smtOffsetR3, runEarlyR3)
+        f_process_pair('B17', sym2Short, 50, cPH_50, cPL_50, r2PH_50, r2PL_50, ref2H, ref2L, smtOffsetR3, runEarlyR3)
+        f_process_pair('B18', sym2Short, 60, cPH_60, cPL_60, r2PH_60, r2PL_60, ref2H, ref2L, smtOffsetR3, runEarlyR3)
+
+// ─── SYMBOL 3 ───
+if sym3On
+    if range1On
+        f_process_pair('C1', sym3Short, 2,  cPH_2,  cPL_2,  r3PH_2,  r3PL_2,  ref3H, ref3L, smtOffsetR1, runEarlyR1)
+        f_process_pair('C2', sym3Short, 3,  cPH_3,  cPL_3,  r3PH_3,  r3PL_3,  ref3H, ref3L, smtOffsetR1, runEarlyR1)
+        f_process_pair('C3', sym3Short, 5,  cPH_5,  cPL_5,  r3PH_5,  r3PL_5,  ref3H, ref3L, smtOffsetR1, runEarlyR1)
+        f_process_pair('C4', sym3Short, 6,  cPH_6,  cPL_6,  r3PH_6,  r3PL_6,  ref3H, ref3L, smtOffsetR1, runEarlyR1)
+        f_process_pair('C5', sym3Short, 8,  cPH_8,  cPL_8,  r3PH_8,  r3PL_8,  ref3H, ref3L, smtOffsetR1, runEarlyR1)
+        f_process_pair('C6', sym3Short, 10, cPH_10, cPL_10, r3PH_10, r3PL_10, ref3H, ref3L, smtOffsetR1, runEarlyR1)
+    if range2On
+        f_process_pair('C7',  sym3Short, 12, cPH_12, cPL_12, r3PH_12, r3PL_12, ref3H, ref3L, smtOffsetR2, runEarlyR2)
+        f_process_pair('C8',  sym3Short, 14, cPH_14, cPL_14, r3PH_14, r3PL_14, ref3H, ref3L, smtOffsetR2, runEarlyR2)
+        f_process_pair('C9',  sym3Short, 17, cPH_17, cPL_17, r3PH_17, r3PL_17, ref3H, ref3L, smtOffsetR2, runEarlyR2)
+        f_process_pair('C10', sym3Short, 20, cPH_20, cPL_20, r3PH_20, r3PL_20, ref3H, ref3L, smtOffsetR2, runEarlyR2)
+        f_process_pair('C11', sym3Short, 22, cPH_22, cPL_22, r3PH_22, r3PL_22, ref3H, ref3L, smtOffsetR2, runEarlyR2)
+        f_process_pair('C12', sym3Short, 25, cPH_25, cPL_25, r3PH_25, r3PL_25, ref3H, ref3L, smtOffsetR2, runEarlyR2)
+    if range3On
+        f_process_pair('C13', sym3Short, 30, cPH_30, cPL_30, r3PH_30, r3PL_30, ref3H, ref3L, smtOffsetR3, runEarlyR3)
+        f_process_pair('C14', sym3Short, 35, cPH_35, cPL_35, r3PH_35, r3PL_35, ref3H, ref3L, smtOffsetR3, runEarlyR3)
+        f_process_pair('C15', sym3Short, 40, cPH_40, cPL_40, r3PH_40, r3PL_40, ref3H, ref3L, smtOffsetR3, runEarlyR3)
+        f_process_pair('C16', sym3Short, 45, cPH_45, cPL_45, r3PH_45, r3PL_45, ref3H, ref3L, smtOffsetR3, runEarlyR3)
+        f_process_pair('C17', sym3Short, 50, cPH_50, cPL_50, r3PH_50, r3PL_50, ref3H, ref3L, smtOffsetR3, runEarlyR3)
+        f_process_pair('C18', sym3Short, 60, cPH_60, cPL_60, r3PH_60, r3PL_60, ref3H, ref3L, smtOffsetR3, runEarlyR3)
+
+// ████████████████████████████████████████████████████████████████████████
+// CDDO + KVO DIVERGENCE ENGINE (UNCHANGED SIGNAL LOGIC, MERGED BUBBLE OUTPUT)
+// ████████████████████████████████████████████████████████████████████████
+float atr14          = ta.atr(14)
+float minATRSwingVal = minATRSwing * atr14
+
+float volSMA       = ta.sma(volume, volLookbackLen)
+float volThreshold = volSMA * volMultiplier
+float surgeThresh  = volSMA * surgeMult
+float _pivotVol    = volume[pivotLen]
+float _pivotVolP1  = nz(volume[pivotLen + 1])
+float _pivotVolM1  = pivotLen > 0 ? nz(volume[pivotLen - 1]) : _pivotVol
+float _maxPivotVol = math.max(_pivotVol, math.max(_pivotVolP1, _pivotVolM1))
+bool  volOKatPivot = not useVolumeFilter or _maxPivotVol >= volThreshold
+bool  volSurgeOK   = _maxPivotVol >= surgeThresh
+
+bool bullCandleOK = not useCandleConfirm or f_bullish_candle(pivotLen)
+bool bearCandleOK = not useCandleConfirm or f_bearish_candle(pivotLen)
+
+float trendEma     = needEma ? ta.ema(close, emaLen) : na
+float emaSlope     = needEma ? trendEma - trendEma[slopeLen] : na
+bool  emaSlopeUp   = needEma ? emaSlope > 0 : false
+bool  emaSlopeDown = needEma ? emaSlope < 0 : false
+
+float barRange = math.max(high - low, syminfo.mintick)
+float deltaRaw = switch srcMode
+    'Body Pressure'  => volume * ((close - open) / barRange)
+    'Close Location' => volume * ((((close - low) / barRange) * 2.0) - 1.0)
+    => close > open ? volume : close < open ? -volume : 0.0
+
+bool newDay = ta.change(time('D')) != 0
+var float cvd = 0.0
+if resetDaily and newDay
+    cvd := deltaRaw
+else
+    cvd += deltaRaw
+
+float cddoBase     = useCVD ? cvd : deltaRaw
+float cddoSmoothed = ta.ema(cddoBase, smoothLen)
+float cddoMean     = ta.sma(cddoSmoothed, zLenCDDO)
+float cddoStdev    = ta.stdev(cddoSmoothed, zLenCDDO)
+float cddoZ        = cddoStdev != 0 ? (cddoSmoothed - cddoMean) / cddoStdev : 0.0
+
+float sv        = ta.change(hlc3) >= 0 ? volume : -volume
+float kvo       = ta.ema(sv, kvoFast) - ta.ema(sv, kvoSlow)
+float kvoSignal = ta.ema(kvo, kvoSignalLen)
+float kvoMean   = ta.sma(kvo, zLenKVO)
+float kvoStdev  = ta.stdev(kvo, zLenKVO)
+float kvoZ      = kvoStdev != 0 ? (kvo - kvoMean) / kvoStdev : 0.0
+
+bool  engineTight = math.abs(cddoZ - kvoZ) < engineSpreadMax
+float hybridOsc   = cddoZ * blendWeightCDDO + kvoZ * blendWeightKVO
+
+float pHigh = f_pivothigh(high, pivotLen)
+float pLow  = f_pivotlow(low, pivotLen)
+float oHigh = f_pivothigh(hybridOsc, pivotLen)
+float oLow  = f_pivotlow(hybridOsc, pivotLen)
+
+bool hasPriceHigh = not na(pHigh)
+bool hasPriceLow  = not na(pLow)
+bool hasOscHigh   = not na(oHigh)
+bool hasOscLow    = not na(oLow)
+
+int cddoPivotBar = bar_index - f_pivot_offset(pivotLen)
+
+var int   lastSeenPriceLowBar  = na
+var float lastSeenPriceLowVal  = na
+var int   lastSeenPriceHighBar = na
+var float lastSeenPriceHighVal = na
+var int   lastSeenOscLowBar    = na
+var float lastSeenOscLowVal    = na
+var int   lastSeenOscHighBar   = na
+var float lastSeenOscHighVal   = na
+
+if hasPriceLow
+    lastSeenPriceLowBar := cddoPivotBar
+    lastSeenPriceLowVal := pLow
+
+if hasPriceHigh
+    lastSeenPriceHighBar := cddoPivotBar
+    lastSeenPriceHighVal := pHigh
+
+if hasOscLow
+    lastSeenOscLowBar := cddoPivotBar
+    lastSeenOscLowVal := oLow
+
+if hasOscHigh
+    lastSeenOscHighBar := cddoPivotBar
+    lastSeenOscHighVal := oHigh
+
+var array<int>   lowBars     = array.new_int()
+var array<float> lowPriceRaw = array.new_float()
+var array<float> lowOscRaw   = array.new_float()
+var array<int>   highBars     = array.new_int()
+var array<float> highPriceRaw = array.new_float()
+var array<float> highOscRaw   = array.new_float()
+
+if hasPriceLow and not na(lastSeenOscLowBar) and math.abs(cddoPivotBar - lastSeenOscLowBar) <= pairTolerance
+    f_push_pair(lowBars, lowPriceRaw, lowOscRaw, cddoPivotBar, pLow, lastSeenOscLowVal, maxStoredPairs)
+
+if hasOscLow and not na(lastSeenPriceLowBar) and math.abs(cddoPivotBar - lastSeenPriceLowBar) <= pairTolerance
+    f_push_pair(lowBars, lowPriceRaw, lowOscRaw, lastSeenPriceLowBar, lastSeenPriceLowVal, oLow, maxStoredPairs)
+
+if hasPriceHigh and not na(lastSeenOscHighBar) and math.abs(cddoPivotBar - lastSeenOscHighBar) <= pairTolerance
+    f_push_pair(highBars, highPriceRaw, highOscRaw, cddoPivotBar, pHigh, lastSeenOscHighVal, maxStoredPairs)
+
+if hasOscHigh and not na(lastSeenPriceHighBar) and math.abs(cddoPivotBar - lastSeenPriceHighBar) <= pairTolerance
+    f_push_pair(highBars, highPriceRaw, highOscRaw, lastSeenPriceHighBar, lastSeenPriceHighVal, oHigh, maxStoredPairs)
+
+float cddoZPrev = cddoZ[pivotLen]
+float kvoZPrev  = kvoZ[pivotLen]
+bool bullConfirmOK = cddoZ > cddoZPrev and kvoZ > kvoZPrev and kvo > kvoSignal
+bool bearConfirmOK = cddoZ < cddoZPrev and kvoZ < kvoZPrev and kvo < kvoSignal
+bool bullTrendOK = not useTrendFilter or close > trendEma
+bool bearTrendOK = not useTrendFilter or close < trendEma
+
+var bool  regBullSignal   = false
+var bool  hidBullSignal   = false
+var int   regBullCurBar   = na
+var float regBullCurPrice = na
+var int   regBullGrade    = 0
+var int   hidBullCurBar   = na
+var float hidBullCurPrice = na
+var int   hidBullGrade    = 0
+var bool  regBearSignal   = false
+var bool  hidBearSignal   = false
+var int   regBearCurBar   = na
+var float regBearCurPrice = na
+var int   regBearGrade    = 0
+var int   hidBearCurBar   = na
+var float hidBearCurPrice = na
+var int   hidBearGrade    = 0
+
+regBullSignal := false
+hidBullSignal := false
+regBearSignal := false
+hidBearSignal := false
+
+int bullStaticGrade = (volOKatPivot ? 1 : 0) + (bullConfirmOK ? 1 : 0) + (volSurgeOK ? 1 : 0) + (bullCandleOK ? 1 : 0) + (engineTight ? 1 : 0) + ((not useSlopeAlign or emaSlopeUp) ? 1 : 0)
+int bearStaticGrade = (volOKatPivot ? 1 : 0) + (bearConfirmOK ? 1 : 0) + (volSurgeOK ? 1 : 0) + (bearCandleOK ? 1 : 0) + (engineTight ? 1 : 0) + ((not useSlopeAlign or emaSlopeDown) ? 1 : 0)
+
+int lowSz = array.size(lowBars)
+if lowSz >= 2
+    int   curIdxLow = lowSz - 1
+    int   curLowBar = array.get(lowBars, curIdxLow)
+    float curLowPrice = array.get(lowPriceRaw, curIdxLow)
+    float curLowOsc = array.get(lowOscRaw, curIdxLow)
+    float bestRegBullScore = na
+    float bestHidBullScore = na
+
+    int startLowIdx = math.max(0, lowSz - 1 - scanBackPairs)
+    if bullTrendOK
+        for i = startLowIdx to curIdxLow - 1
+            int prevLowBar = array.get(lowBars, i)
+            int barSpan = curLowBar - prevLowBar
+            if barSpan < minPivotSpacing
+                continue
+
+            float prevLowOsc = array.get(lowOscRaw, i)
+            float oscDelta = math.abs(curLowOsc - prevLowOsc)
+            if oscDelta < minOscSwing
+                continue
+
+            float prevLowPrice = array.get(lowPriceRaw, i)
+            bool isRegBullStructure = f_lower_or_equal(curLowPrice, prevLowPrice, priceTol) and f_higher_or_equal(curLowOsc, prevLowOsc, oscTolerance)
+            bool isHidBullStructure = f_higher_or_equal(curLowPrice, prevLowPrice, priceTol) and f_lower_or_equal(curLowOsc, prevLowOsc, oscTolerance)
+            if not isRegBullStructure and not isHidBullStructure
+                continue
+
+            float priceDelta = math.abs(curLowPrice - prevLowPrice)
+            bool chkATR = not useATRSwingFilter or priceDelta >= minATRSwingVal
+            bool chkZSwing = oscDelta >= minZSwing
+            bool chkExtreme = not useExtremeFilter or (curLowOsc <= negExtremeLevel or prevLowOsc <= negExtremeLevel)
+            bool chkDepth = barSpan >= minSwingBars
+
+            int grade = bullStaticGrade + (chkATR ? 1 : 0) + (chkZSwing ? 1 : 0) + (chkExtreme ? 1 : 0) + (chkDepth ? 1 : 0)
+            if grade < GRADE_MODERATE
+                continue
+
+            float score = priceDelta + oscDelta
+            if isRegBullStructure and (na(bestRegBullScore) or score > bestRegBullScore)
+                bestRegBullScore := score
+                regBullSignal := true
+                regBullCurBar := curLowBar
+                regBullCurPrice := curLowPrice
+                regBullGrade := grade
+            if isHidBullStructure and (na(bestHidBullScore) or score > bestHidBullScore)
+                bestHidBullScore := score
+                hidBullSignal := true
+                hidBullCurBar := curLowBar
+                hidBullCurPrice := curLowPrice
+                hidBullGrade := grade
+
+int highSz = array.size(highBars)
+if highSz >= 2
+    int   curIdxHigh = highSz - 1
+    int   curHighBar = array.get(highBars, curIdxHigh)
+    float curHighPrice = array.get(highPriceRaw, curIdxHigh)
+    float curHighOsc = array.get(highOscRaw, curIdxHigh)
+    float bestRegBearScore = na
+    float bestHidBearScore = na
+
+    int startHighIdx = math.max(0, highSz - 1 - scanBackPairs)
+    if bearTrendOK
+        for i = startHighIdx to curIdxHigh - 1
+            int prevHighBar = array.get(highBars, i)
+            int barSpan = curHighBar - prevHighBar
+            if barSpan < minPivotSpacing
+                continue
+
+            float prevHighOsc = array.get(highOscRaw, i)
+            float oscDelta = math.abs(curHighOsc - prevHighOsc)
+            if oscDelta < minOscSwing
+                continue
+
+            float prevHighPrice = array.get(highPriceRaw, i)
+            bool isRegBearStructure = f_higher_or_equal(curHighPrice, prevHighPrice, priceTol) and f_lower_or_equal(curHighOsc, prevHighOsc, oscTolerance)
+            bool isHidBearStructure = f_lower_or_equal(curHighPrice, prevHighPrice, priceTol) and f_higher_or_equal(curHighOsc, prevHighOsc, oscTolerance)
+            if not isRegBearStructure and not isHidBearStructure
+                continue
+
+            float priceDelta = math.abs(curHighPrice - prevHighPrice)
+            bool chkATR = not useATRSwingFilter or priceDelta >= minATRSwingVal
+            bool chkZSwing = oscDelta >= minZSwing
+            bool chkExtreme = not useExtremeFilter or (curHighOsc >= extremeLevel or prevHighOsc >= extremeLevel)
+            bool chkDepth = barSpan >= minSwingBars
+
+            int grade = bearStaticGrade + (chkATR ? 1 : 0) + (chkZSwing ? 1 : 0) + (chkExtreme ? 1 : 0) + (chkDepth ? 1 : 0)
+            if grade < GRADE_MODERATE
+                continue
+
+            float score = priceDelta + oscDelta
+            if isRegBearStructure and (na(bestRegBearScore) or score > bestRegBearScore)
+                bestRegBearScore := score
+                regBearSignal := true
+                regBearCurBar := curHighBar
+                regBearCurPrice := curHighPrice
+                regBearGrade := grade
+            if isHidBearStructure and (na(bestHidBearScore) or score > bestHidBearScore)
+                bestHidBearScore := score
+                hidBearSignal := true
+                hidBearCurBar := curHighBar
+                hidBearCurPrice := curHighPrice
+                hidBearGrade := grade
+
+var int lastBullSignalBar = na
+var int lastBearSignalBar = na
+var int lastBullFireBar   = na
+var int lastBearFireBar   = na
+
+bool barConfirmed   = not waitForClose or barstate.isconfirmed
+bool bullCooldownOK = signalCooldown == 0 or na(lastBullFireBar) or (bar_index - lastBullFireBar) >= signalCooldown
+bool bearCooldownOK = signalCooldown == 0 or na(lastBearFireBar) or (bar_index - lastBearFireBar) >= signalCooldown
+bool fireRegBull = false
+bool fireHidBull = false
+bool fireRegBear = false
+bool fireHidBear = false
+
+if regBullSignal and barConfirmed and (na(lastBullSignalBar) or lastBullSignalBar != regBullCurBar) and bullCooldownOK
+    fireRegBull := true
+    f_register_cddo(regBullCurBar, regBullCurPrice, false, 'RCDD' + f_tier_label_reg(regBullGrade))
+    lastBullSignalBar := regBullCurBar
+    lastBullFireBar := bar_index
+
+if hidBullSignal and barConfirmed and (na(lastBullSignalBar) or lastBullSignalBar != hidBullCurBar) and bullCooldownOK
+    fireHidBull := true
+    f_register_cddo(hidBullCurBar, hidBullCurPrice, false, 'HCDD' + f_tier_label_hid(hidBullGrade))
+    lastBullSignalBar := hidBullCurBar
+    lastBullFireBar := bar_index
+
+if regBearSignal and barConfirmed and (na(lastBearSignalBar) or lastBearSignalBar != regBearCurBar) and bearCooldownOK
+    fireRegBear := true
+    f_register_cddo(regBearCurBar, regBearCurPrice, true, 'RCDD' + f_tier_label_reg(regBearGrade))
+    lastBearSignalBar := regBearCurBar
+    lastBearFireBar := bar_index
+
+if hidBearSignal and barConfirmed and (na(lastBearSignalBar) or lastBearSignalBar != hidBearCurBar) and bearCooldownOK
+    fireHidBear := true
+    f_register_cddo(hidBearCurBar, hidBearCurPrice, true, 'HCDD' + f_tier_label_hid(hidBearGrade))
+    lastBearSignalBar := hidBearCurBar
+    lastBearFireBar := bar_index
+
+// ████████████████████████████████████████████████████████████████████████
+// INVALIDATION — SMT OR CDDO invalidates merged bubble
+// ████████████████████████████████████████████████████████████████████████
+int activeCount = array.size(activeSignals)
+if activeCount > 0
+    for pos = activeCount - 1 to 0
+        int idx = array.get(activeSignals, pos)
+        SMTSignal sig = array.get(signals, idx)
+        if sig.removed
+            array.remove(activeSignals, pos)
+            continue
+        if sig.invalidated
+            continue
+
+        if sig.hasSMT and not sig.smtInvalidated and not na(sig.smtPivotPrice)
+            bool invSMT = sig.isBear ? high > sig.smtPivotPrice : low < sig.smtPivotPrice
+            if invSMT
+                sig.smtInvalidated := true
+
+        if sig.hasCDDO and not sig.cddoInvalidated and not na(sig.cddoPivotPrice)
+            bool invCDDO = sig.isBear ? high > sig.cddoPivotPrice : low < sig.cddoPivotPrice
+            if invCDDO
+                sig.cddoInvalidated := true
+
+        bool mergedInvalidated = (sig.hasSMT and sig.smtInvalidated) or (sig.hasCDDO and sig.cddoInvalidated)
+        if mergedInvalidated and not sig.invalidated
+            sig.invalidated := true
+            if showInvalidated
+                if not na(sig.lbl)
+                    label.set_color(sig.lbl, invalidColor)
+                    label.set_textcolor(sig.lbl, fadedText)
+                if not na(sig.ln)
+                    line.set_color(sig.ln, invalidColor)
+            else
+                if not na(sig.lbl)
+                    label.delete(sig.lbl)
+                if not na(sig.ln)
+                    line.delete(sig.ln)
+                sig.lbl := na
+                sig.ln := na
+                sig.removed := true
+                array.remove(activeSignals, pos)
+
+        array.set(signals, idx, sig)
+
+// Cap array visuals to prevent memory issues while keeping stable indexes
+while array.size(signalOrder) > 300
+    int oldIdx = array.shift(signalOrder)
+    SMTSignal old = array.get(signals, oldIdx)
+    if not old.removed
+        if not na(old.lbl)
+            label.delete(old.lbl)
+        if not na(old.ln)
+            line.delete(old.ln)
+        old.lbl := na
+        old.ln := na
+        old.invalidated := true
+        old.smtInvalidated := old.hasSMT ? true : old.smtInvalidated
+        old.cddoInvalidated := old.hasCDDO ? true : old.cddoInvalidated
+        old.removed := true
+        array.set(signals, oldIdx, old)
+        f_remove_active_index(oldIdx)
+
+// ████████████████████████████████████████████████████████████████████████
+// ALERT CONDITIONS
+// ████████████████████████████████████████████████████████████████████████
+bool anyBearEarly = false
+bool anyBullEarly = false
+int smtHistEarlyCount = array.size(smtHistoryEarly)
+if smtHistEarlyCount > 0
+    for i = smtHistEarlyCount - 1 to 0
+        int idx = array.get(smtHistoryEarly, i)
+        SMTSignal newest = array.get(signals, idx)
+        bool usable = newest.hasSMT and not newest.removed and not newest.invalidated and (bar_index - newest.barIdx) <= 60
+        if usable
+            anyBearEarly := newest.isBear
+            anyBullEarly := not newest.isBear
+            break
+
+bool anyBearConf = false
+bool anyBullConf = false
+int smtHistConfCount = array.size(smtHistoryConf)
+if smtHistConfCount > 0
+    for i = smtHistConfCount - 1 to 0
+        int idx = array.get(smtHistoryConf, i)
+        SMTSignal newest = array.get(signals, idx)
+        bool usable = newest.hasSMT and not newest.removed and not newest.invalidated and (bar_index - newest.barIdx) <= 60
+        if usable
+            anyBearConf := newest.isBear
+            anyBullConf := not newest.isBear
+            break
+
+// Backward-compatible aliases point to confirmed SMT.
+bool anyBear = anyBearConf
+bool anyBull = anyBullConf
+
+plotshape(anyBearEarly, title='Bearish SMT Early', style=shape.triangledown, location=location.abovebar,
+     color=bearColor, size=size.tiny, display=display.none)
+plotshape(anyBullEarly, title='Bullish SMT Early', style=shape.triangleup, location=location.belowbar,
+     color=bullColor, size=size.tiny, display=display.none)
+plotshape(anyBearConf, title='Bearish SMT Confirmed', style=shape.triangledown, location=location.abovebar,
+     color=bearColor, size=size.tiny, display=display.none)
+plotshape(anyBullConf, title='Bullish SMT Confirmed', style=shape.triangleup, location=location.belowbar,
+     color=bullColor, size=size.tiny, display=display.none)
+
+alertcondition(anyBearEarly, title='Bearish SMT Early', message='Bearish SMT EARLY divergence on {{ticker}}')
+alertcondition(anyBullEarly, title='Bullish SMT Early', message='Bullish SMT EARLY divergence on {{ticker}}')
+alertcondition(anyBearEarly or anyBullEarly, title='Any SMT Early', message='SMT EARLY divergence detected on {{ticker}}')
+
+alertcondition(anyBearConf, title='Bearish SMT Confirmed', message='Bearish SMT CONFIRMED divergence on {{ticker}}')
+alertcondition(anyBullConf, title='Bullish SMT Confirmed', message='Bullish SMT CONFIRMED divergence on {{ticker}}')
+alertcondition(anyBearConf or anyBullConf, title='Any SMT Confirmed', message='SMT CONFIRMED divergence detected on {{ticker}}')
+
+alertcondition(anyBear, title='Bearish SMT Divergence', message='Bearish SMT Divergence on {{ticker}}')
+alertcondition(anyBull, title='Bullish SMT Divergence', message='Bullish SMT Divergence on {{ticker}}')
+alertcondition(anyBear or anyBull, title='Any SMT Divergence', message='SMT Divergence detected on {{ticker}}')
+
+alertcondition(fireRegBull, 'Hybrid Regular Bullish', 'Hybrid regular bullish divergence detected')
+alertcondition(fireHidBull, 'Hybrid Hidden Bullish', 'Hybrid hidden bullish divergence detected')
+alertcondition(fireRegBear, 'Hybrid Regular Bearish', 'Hybrid regular bearish divergence detected')
+alertcondition(fireHidBear, 'Hybrid Hidden Bearish', 'Hybrid hidden bearish divergence detected')

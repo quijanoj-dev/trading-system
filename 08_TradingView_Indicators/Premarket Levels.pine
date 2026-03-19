@@ -1,0 +1,444 @@
+// This Pine Script™ is subject to the terms of the Mozilla Public License 2.0
+// https://mozilla.org/MPL/2.0/
+// © Converted from ThinkScript "Pre-Market Levels" by 3RG Coding for #PBP
+
+//@version=6
+indicator("Pre-Market Levels", overlay = true, max_labels_count = 500, max_lines_count = 500)
+
+// ─── Global Settings ────────────────────────────────────────────────────────
+grp_global = "Global Settings"
+i_futureExt    = input.int(10, "Future Extension (bars)", minval=0, maxval=500, group=grp_global, tooltip="Bars to project levels right of current bar")
+i_plotPrevDays = input.int(15, "Plot Active Lines On Prev Days", minval=0, group=grp_global)
+
+// ─── Global Line Style ───────────────────────────────────────────────────────
+grp_style  = "Global Line Style"
+i_opacity  = input.int(100, "Line Opacity (0-100)", minval=0, maxval=100, group=grp_style)
+i_styleStr = input.string("Solid", "Line Type", options=["Solid", "Dashed", "Dotted"], group=grp_style)
+i_width    = input.int(1, "Line Width", minval=1, maxval=5, group=grp_style)
+
+// var: input-derived, immutable after bar 0
+var l_style  = i_styleStr == "Dashed" ? line.style_dashed : i_styleStr == "Dotted" ? line.style_dotted : line.style_solid
+var t_transp = 100 - i_opacity
+
+// ─── Session Inputs ──────────────────────────────────────────────────────────
+grp_pm = "Premarket Session"
+i_showPMO = input.bool(true,                       "Open",  inline="pm_o", group=grp_pm)
+i_col_pmo = input.color(color.rgb(234, 136, 255),  "",      inline="pm_o", group=grp_pm)
+i_showPMH = input.bool(true,                       "High",  inline="pm_h", group=grp_pm)
+i_col_pmh = input.color(color.rgb(116, 189, 232),  "",      inline="pm_h", group=grp_pm)
+i_showPML = input.bool(true,                       "Low",   inline="pm_l", group=grp_pm)
+i_col_pml = input.color(color.rgb(116, 189, 232),  "",      inline="pm_l", group=grp_pm)
+
+grp_cd = "Current Day Session  (09:30 – 16:00)"
+i_showCDO = input.bool(true,          "Open",  inline="cd_o", group=grp_cd)
+i_col_cdo = input.color(color.white,  "",      inline="cd_o", group=grp_cd)
+i_showCDH = input.bool(true,          "High",  inline="cd_h", group=grp_cd)
+i_col_cdh = input.color(color.green,  "",      inline="cd_h", group=grp_cd)
+i_showCDL = input.bool(true,          "Low",   inline="cd_l", group=grp_cd)
+i_col_cdl = input.color(color.red,    "",      inline="cd_l", group=grp_cd)
+
+grp_pd = "Previous Day Session"
+i_showPDO = input.bool(true,                       "Open",  inline="pd_o", group=grp_pd)
+i_col_pdo = input.color(color.rgb(153, 255, 153),  "",      inline="pd_o", group=grp_pd)
+i_showPDH = input.bool(true,                       "High",  inline="pd_h", group=grp_pd)
+i_col_pdh = input.color(color.rgb(153, 255, 153),  "",      inline="pd_h", group=grp_pd)
+i_showPDL = input.bool(true,                       "Low",   inline="pd_l", group=grp_pd)
+i_col_pdl = input.color(color.rgb(255, 126, 156),  "",      inline="pd_l", group=grp_pd)
+i_showPDC = input.bool(true,                       "Close", inline="pd_c", group=grp_pd)
+i_col_pdc = input.color(color.rgb(231, 190, 0),    "",      inline="pd_c", group=grp_pd)
+
+grp_pw = "Previous Week Session"
+i_showPWO = input.bool(true, "Open",  inline="pw_o", group=grp_pw)
+i_col_pwo = input.color(color.rgb(0, 200, 220),  "", inline="pw_o", group=grp_pw)
+i_showPWH = input.bool(true, "High",  inline="pw_h", group=grp_pw)
+i_col_pwh = input.color(color.rgb(0, 200, 220),  "", inline="pw_h", group=grp_pw)
+i_showPWL = input.bool(true, "Low",   inline="pw_l", group=grp_pw)
+i_col_pwl = input.color(color.rgb(0, 170, 200),  "", inline="pw_l", group=grp_pw)
+i_showPWC = input.bool(true, "Close", inline="pw_c", group=grp_pw)
+i_col_pwc = input.color(color.rgb(0, 140, 180),  "", inline="pw_c", group=grp_pw)
+
+grp_pmo = "Previous Month Session"
+i_showPMoO = input.bool(true, "Open",  inline="pmo_o", group=grp_pmo)
+i_col_pmoo = input.color(color.rgb(255, 100, 220),  "", inline="pmo_o", group=grp_pmo)
+i_showPMoH = input.bool(true, "High",  inline="pmo_h", group=grp_pmo)
+i_col_pmoh = input.color(color.rgb(255, 100, 220),  "", inline="pmo_h", group=grp_pmo)
+i_showPMoL = input.bool(true, "Low",   inline="pmo_l", group=grp_pmo)
+i_col_pmol = input.color(color.rgb(220, 60, 190),   "", inline="pmo_l", group=grp_pmo)
+i_showPMoC = input.bool(true, "Close", inline="pmo_c", group=grp_pmo)
+i_col_pmoc = input.color(color.rgb(190, 30, 160),   "", inline="pmo_c", group=grp_pmo)
+
+grp_l = "Labels"
+i_balloons = input.string("Right", "Balloons", options=["Left", "Right", "Off"], group=grp_l)
+i_specLen  = input.int(100, "Specific Length (for Left balloons)", minval=1, group=grp_l)
+
+// ─── Core Constants (var: computed once, never change) ───────────────────────
+var hideL    = timeframe.in_seconds() <= 86400
+var tf_ms    = timeframe.in_seconds() * 1000
+var futureMs = i_futureExt * tf_ms
+
+// ─── Colors (var: input-derived, immutable after bar 0) ──────────────────────
+var c_pmo  = color.new(i_col_pmo,  t_transp)
+var c_pmh  = color.new(i_col_pmh,  t_transp)
+var c_pml  = color.new(i_col_pml,  t_transp)
+var c_cdo  = color.new(i_col_cdo,  t_transp)
+var c_cdh  = color.new(i_col_cdh,  t_transp)
+var c_cdl  = color.new(i_col_cdl,  t_transp)
+var c_pdo  = color.new(i_col_pdo,  t_transp)
+var c_pdh  = color.new(i_col_pdh,  t_transp)
+var c_pdl  = color.new(i_col_pdl,  t_transp)
+var c_pdc  = color.new(i_col_pdc,  t_transp)
+var c_pwo  = color.new(i_col_pwo,  t_transp)
+var c_pwh  = color.new(i_col_pwh,  t_transp)
+var c_pwl  = color.new(i_col_pwl,  t_transp)
+var c_pwc  = color.new(i_col_pwc,  t_transp)
+var c_pmoo = color.new(i_col_pmoo, t_transp)
+var c_pmoh = color.new(i_col_pmoh, t_transp)
+var c_pmol = color.new(i_col_pmol, t_transp)
+var c_pmoc = color.new(i_col_pmoc, t_transp)
+
+// ─── Explicit Session Detection ───────────────────────────────────────────────
+isPM  = not na(time(timeframe.period, "0400-0930", "America/New_York"))
+isRM  = not na(time(timeframe.period, "0930-1600", "America/New_York"))
+
+pmStart = isPM  and not isPM[1]
+rmStart = isRM  and not isRM[1]
+rmEnd   = isRM[1] and not isRM
+
+// Plot-window gate: single bool per bar
+mktPlotFinal = (timenow - time) <= (i_plotPrevDays * 86400000)
+
+// Bar-edge timestamps (computed once, reused everywhere)
+barEndMs = time + tf_ms
+x2now = barstate.islast ? time + futureMs : barEndMs
+
+// Combined draw gate
+canDraw = hideL and mktPlotFinal
+
+// ─── Premarket Levels (04:00 – 09:30) ────────────────────────────────────────
+var float pmOpenLvl = na
+var float pmHighLvl = na
+var float pmLowLvl  = na
+
+var line pmOpenLine = na
+var line pmHighLine = na
+var line pmLowLine  = na
+
+if pmStart
+    pmOpenLvl := open
+    pmHighLvl := high
+    pmLowLvl  := low
+    if canDraw
+        if i_showPMO
+            pmOpenLine := line.new(time, pmOpenLvl, barEndMs, pmOpenLvl, xloc=xloc.bar_time, color=c_pmo, width=i_width, style=l_style)
+        if i_showPMH
+            pmHighLine := line.new(time, pmHighLvl, barEndMs, pmHighLvl, xloc=xloc.bar_time, color=c_pmh, width=i_width, style=l_style)
+        if i_showPML
+            pmLowLine  := line.new(time, pmLowLvl,  barEndMs, pmLowLvl,  xloc=xloc.bar_time, color=c_pml, width=i_width, style=l_style)
+
+else if isPM
+    pmHighLvl := math.max(high, nz(pmHighLvl, high))
+    pmLowLvl  := math.min(low,  nz(pmLowLvl,  low))
+    if i_showPMO and not na(pmOpenLine)
+        line.set_x2(pmOpenLine, x2now)
+    if i_showPMH and not na(pmHighLine)
+        line.set_y1(pmHighLine, pmHighLvl)
+        line.set_y2(pmHighLine, pmHighLvl)
+        line.set_x2(pmHighLine, x2now)
+    if i_showPML and not na(pmLowLine)
+        line.set_y1(pmLowLine, pmLowLvl)
+        line.set_y2(pmLowLine, pmLowLvl)
+        line.set_x2(pmLowLine, x2now)
+
+// PM lines extend ALL DAY as reference levels
+if canDraw and not isPM and not pmStart
+    if i_showPMO and not na(pmOpenLine)
+        line.set_x2(pmOpenLine, x2now)
+    if i_showPMH and not na(pmHighLine)
+        line.set_x2(pmHighLine, x2now)
+    if i_showPML and not na(pmLowLine)
+        line.set_x2(pmLowLine, x2now)
+
+// Mid-period fallback: PM session started before chart history
+if canDraw and not na(pmOpenLvl)
+    if i_showPMO and na(pmOpenLine)
+        pmOpenLine := line.new(time, pmOpenLvl, barEndMs, pmOpenLvl, xloc=xloc.bar_time, color=c_pmo, width=i_width, style=l_style)
+    if i_showPMH and na(pmHighLine)
+        pmHighLine := line.new(time, pmHighLvl, barEndMs, pmHighLvl, xloc=xloc.bar_time, color=c_pmh, width=i_width, style=l_style)
+    if i_showPML and na(pmLowLine)
+        pmLowLine  := line.new(time, pmLowLvl,  barEndMs, pmLowLvl,  xloc=xloc.bar_time, color=c_pml, width=i_width, style=l_style)
+
+// ─── Current Day Levels (09:30 – 16:00 only) ─────────────────────────────────
+var float cdOpen = na
+var float cdHigh = na
+var float cdLow  = na
+
+var line cdOpenLine = na
+var line cdHighLine = na
+var line cdLowLine  = na
+
+if rmStart
+    cdOpen := open
+    cdHigh := high
+    cdLow  := low
+    if canDraw
+        if i_showCDO
+            cdOpenLine := line.new(time, cdOpen, barEndMs, cdOpen, xloc=xloc.bar_time, color=c_cdo, width=i_width, style=l_style)
+        if i_showCDH
+            cdHighLine := line.new(time, cdHigh, barEndMs, cdHigh, xloc=xloc.bar_time, color=c_cdh, width=i_width, style=l_style)
+        if i_showCDL
+            cdLowLine  := line.new(time, cdLow,  barEndMs, cdLow,  xloc=xloc.bar_time, color=c_cdl, width=i_width, style=l_style)
+
+else if isRM
+    cdHigh := math.max(high, nz(cdHigh, high))
+    cdLow  := math.min(low,  nz(cdLow,  low))
+    if i_showCDO and not na(cdOpenLine)
+        line.set_x2(cdOpenLine, x2now)
+    if i_showCDH and not na(cdHighLine)
+        line.set_y1(cdHighLine, cdHigh)
+        line.set_y2(cdHighLine, cdHigh)
+        line.set_x2(cdHighLine, x2now)
+    if i_showCDL and not na(cdLowLine)
+        line.set_y1(cdLowLine, cdLow)
+        line.set_y2(cdLowLine, cdLow)
+        line.set_x2(cdLowLine, x2now)
+
+// Freeze CD lines at exactly 16:00 — never extend into after-hours
+if rmEnd
+    if not na(cdOpenLine)
+        line.set_x2(cdOpenLine, time[1] + tf_ms)
+    if not na(cdHighLine)
+        line.set_x2(cdHighLine, time[1] + tf_ms)
+    if not na(cdLowLine)
+        line.set_x2(cdLowLine,  time[1] + tf_ms)
+
+// ─── Previous Day Levels ──────────────────────────────────────────────────────
+var float pdOpen  = na
+var float pdHigh  = na
+var float pdLow   = na
+var float pdClose = na
+var float _dOpen  = na
+var float _dHigh  = na
+var float _dLow   = na
+
+[init_pdO, init_pdH, init_pdL, init_pdC] = request.security(syminfo.tickerid, "D", [open[1], high[1], low[1], close[1]], lookahead=barmerge.lookahead_off)
+
+breakDay = ta.change(time("D")) != 0 or bar_index == 0
+if breakDay
+    pdOpen  := bar_index == 0 ? init_pdO : _dOpen
+    pdHigh  := bar_index == 0 ? init_pdH : _dHigh
+    pdLow   := bar_index == 0 ? init_pdL : _dLow
+    pdClose := bar_index == 0 ? init_pdC : close[1]
+    _dOpen  := open
+    _dHigh  := high
+    _dLow   := low
+else
+    _dHigh  := math.max(high, nz(_dHigh, high))
+    _dLow   := math.min(low,  nz(_dLow,  low))
+
+var line pdOpenLine  = na
+var line pdHighLine  = na
+var line pdLowLine   = na
+var line pdCloseLine = na
+
+if breakDay and canDraw and not na(pdOpen)
+    if i_showPDO
+        pdOpenLine  := line.new(time, pdOpen,  barEndMs, pdOpen,  xloc=xloc.bar_time, color=c_pdo, width=i_width, style=l_style)
+    if i_showPDH
+        pdHighLine  := line.new(time, pdHigh,  barEndMs, pdHigh,  xloc=xloc.bar_time, color=c_pdh, width=i_width, style=l_style)
+    if i_showPDL
+        pdLowLine   := line.new(time, pdLow,   barEndMs, pdLow,   xloc=xloc.bar_time, color=c_pdl, width=i_width, style=l_style)
+    if i_showPDC
+        pdCloseLine := line.new(time, pdClose, barEndMs, pdClose, xloc=xloc.bar_time, color=c_pdc, width=i_width, style=l_style)
+
+if canDraw
+    if i_showPDO and not na(pdOpenLine)
+        line.set_x2(pdOpenLine, x2now)
+    if i_showPDH and not na(pdHighLine)
+        line.set_x2(pdHighLine, x2now)
+    if i_showPDL and not na(pdLowLine)
+        line.set_x2(pdLowLine, x2now)
+    if i_showPDC and not na(pdCloseLine)
+        line.set_x2(pdCloseLine, x2now)
+
+// ─── Previous Week Levels ─────────────────────────────────────────────────────
+var float pwOpen  = na
+var float pwHigh  = na
+var float pwLow   = na
+var float pwClose = na
+var float _wOpen  = na
+var float _wHigh  = na
+var float _wLow   = na
+
+[init_pwO, init_pwH, init_pwL, init_pwC] = request.security(syminfo.tickerid, "W", [open[1], high[1], low[1], close[1]], lookahead=barmerge.lookahead_off)
+
+breakWeek = ta.change(time("W")) != 0 or bar_index == 0
+if breakWeek
+    pwOpen  := bar_index == 0 ? init_pwO : _wOpen
+    pwHigh  := bar_index == 0 ? init_pwH : _wHigh
+    pwLow   := bar_index == 0 ? init_pwL : _wLow
+    pwClose := bar_index == 0 ? init_pwC : close[1]
+    _wOpen  := open
+    _wHigh  := high
+    _wLow   := low
+else
+    _wHigh  := math.max(high, nz(_wHigh, high))
+    _wLow   := math.min(low,  nz(_wLow,  low))
+
+var line pwOpenLine  = na
+var line pwHighLine  = na
+var line pwLowLine   = na
+var line pwCloseLine = na
+
+if breakWeek and canDraw and not na(pwOpen)
+    if i_showPWO
+        pwOpenLine  := line.new(time, pwOpen,  barEndMs, pwOpen,  xloc=xloc.bar_time, color=c_pwo, width=i_width, style=l_style)
+    if i_showPWH
+        pwHighLine  := line.new(time, pwHigh,  barEndMs, pwHigh,  xloc=xloc.bar_time, color=c_pwh, width=i_width, style=l_style)
+    if i_showPWL
+        pwLowLine   := line.new(time, pwLow,   barEndMs, pwLow,   xloc=xloc.bar_time, color=c_pwl, width=i_width, style=l_style)
+    if i_showPWC
+        pwCloseLine := line.new(time, pwClose, barEndMs, pwClose, xloc=xloc.bar_time, color=c_pwc, width=i_width, style=l_style)
+
+// Extension + mid-period fallback (merged into single canDraw block)
+if canDraw
+    if i_showPWO
+        if not na(pwOpenLine)
+            line.set_x2(pwOpenLine, x2now)
+        else if not na(pwOpen)
+            pwOpenLine := line.new(time, pwOpen, barEndMs, pwOpen, xloc=xloc.bar_time, color=c_pwo, width=i_width, style=l_style)
+    if i_showPWH
+        if not na(pwHighLine)
+            line.set_x2(pwHighLine, x2now)
+        else if not na(pwHigh)
+            pwHighLine := line.new(time, pwHigh, barEndMs, pwHigh, xloc=xloc.bar_time, color=c_pwh, width=i_width, style=l_style)
+    if i_showPWL
+        if not na(pwLowLine)
+            line.set_x2(pwLowLine, x2now)
+        else if not na(pwLow)
+            pwLowLine := line.new(time, pwLow, barEndMs, pwLow, xloc=xloc.bar_time, color=c_pwl, width=i_width, style=l_style)
+    if i_showPWC
+        if not na(pwCloseLine)
+            line.set_x2(pwCloseLine, x2now)
+        else if not na(pwClose)
+            pwCloseLine := line.new(time, pwClose, barEndMs, pwClose, xloc=xloc.bar_time, color=c_pwc, width=i_width, style=l_style)
+
+// ─── Previous Month Levels ────────────────────────────────────────────────────
+var float pmmoOpen  = na
+var float pmmoHigh  = na
+var float pmmoLow   = na
+var float pmmoClose = na
+var float _mOpen    = na
+var float _mHigh    = na
+var float _mLow     = na
+
+[init_pmoO, init_pmoH, init_pmoL, init_pmoC] = request.security(syminfo.tickerid, "M", [open[1], high[1], low[1], close[1]], lookahead=barmerge.lookahead_off)
+
+breakMonth = ta.change(time("M")) != 0 or bar_index == 0
+if breakMonth
+    pmmoOpen  := bar_index == 0 ? init_pmoO : _mOpen
+    pmmoHigh  := bar_index == 0 ? init_pmoH : _mHigh
+    pmmoLow   := bar_index == 0 ? init_pmoL : _mLow
+    pmmoClose := bar_index == 0 ? init_pmoC : close[1]
+    _mOpen    := open
+    _mHigh    := high
+    _mLow     := low
+else
+    _mHigh    := math.max(high, nz(_mHigh, high))
+    _mLow     := math.min(low,  nz(_mLow,  low))
+
+var line pmmoOpenLine  = na
+var line pmmoHighLine  = na
+var line pmmoLowLine   = na
+var line pmmoCloseLine = na
+
+if breakMonth and canDraw and not na(pmmoOpen)
+    if i_showPMoO
+        pmmoOpenLine  := line.new(time, pmmoOpen,  barEndMs, pmmoOpen,  xloc=xloc.bar_time, color=c_pmoo, width=i_width, style=l_style)
+    if i_showPMoH
+        pmmoHighLine  := line.new(time, pmmoHigh,  barEndMs, pmmoHigh,  xloc=xloc.bar_time, color=c_pmoh, width=i_width, style=l_style)
+    if i_showPMoL
+        pmmoLowLine   := line.new(time, pmmoLow,   barEndMs, pmmoLow,   xloc=xloc.bar_time, color=c_pmol, width=i_width, style=l_style)
+    if i_showPMoC
+        pmmoCloseLine := line.new(time, pmmoClose, barEndMs, pmmoClose, xloc=xloc.bar_time, color=c_pmoc, width=i_width, style=l_style)
+
+// Extension + mid-period fallback (merged into single canDraw block)
+if canDraw
+    if i_showPMoO
+        if not na(pmmoOpenLine)
+            line.set_x2(pmmoOpenLine, x2now)
+        else if not na(pmmoOpen)
+            pmmoOpenLine := line.new(time, pmmoOpen, barEndMs, pmmoOpen, xloc=xloc.bar_time, color=c_pmoo, width=i_width, style=l_style)
+    if i_showPMoH
+        if not na(pmmoHighLine)
+            line.set_x2(pmmoHighLine, x2now)
+        else if not na(pmmoHigh)
+            pmmoHighLine := line.new(time, pmmoHigh, barEndMs, pmmoHigh, xloc=xloc.bar_time, color=c_pmoh, width=i_width, style=l_style)
+    if i_showPMoL
+        if not na(pmmoLowLine)
+            line.set_x2(pmmoLowLine, x2now)
+        else if not na(pmmoLow)
+            pmmoLowLine := line.new(time, pmmoLow, barEndMs, pmmoLow, xloc=xloc.bar_time, color=c_pmol, width=i_width, style=l_style)
+    if i_showPMoC
+        if not na(pmmoCloseLine)
+            line.set_x2(pmmoCloseLine, x2now)
+        else if not na(pmmoClose)
+            pmmoCloseLine := line.new(time, pmmoClose, barEndMs, pmmoClose, xloc=xloc.bar_time, color=c_pmoc, width=i_width, style=l_style)
+
+// ─── Labels (Balloons) ───────────────────────────────────────────────────────
+var label lbl_pmo  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pmh  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pml  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_cdo  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_cdh  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_cdl  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pdo  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pdh  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pdl  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pdc  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pwo  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pwh  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pwl  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pwc  = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pmoo = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pmoh = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pmol = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+var label lbl_pmoc = label.new(na, na, "", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.white, size=size.small)
+
+var int targetTimeMs = na
+if barstate.islast
+    targetTimeMs := i_balloons == "Right" ? time + futureMs : i_balloons == "Left" ? time - (i_specLen * tf_ms) : na
+
+// Label updater with early-exit when balloons are off
+updateLbl(lbl, condition, price, txt, col) =>
+    if barstate.islast
+        if i_balloons == "Off"
+            label.set_y(lbl, na)
+        else if condition and not na(price)
+            label.set_xy(lbl, targetTimeMs, price)
+            label.set_text(lbl, txt)
+            label.set_color(lbl, col)
+        else
+            label.set_y(lbl, na)
+
+updateLbl(lbl_pmo, i_showPMO, pmOpenLvl,                    "PMO", c_pmo)
+updateLbl(lbl_pmh, i_showPMH, pmHighLvl > 0 ? pmHighLvl : na, "PMH", c_pmh)
+updateLbl(lbl_pml, i_showPML, pmLowLvl  > 0 ? pmLowLvl  : na, "PML", c_pml)
+
+updateLbl(lbl_cdo, i_showCDO, cdOpen, "CDO", c_cdo)
+updateLbl(lbl_cdh, i_showCDH, cdHigh, "CDH", c_cdh)
+updateLbl(lbl_cdl, i_showCDL, cdLow,  "CDL", c_cdl)
+
+updateLbl(lbl_pdo, i_showPDO, pdOpen,  "PDO", c_pdo)
+updateLbl(lbl_pdh, i_showPDH, pdHigh,  "PDH", c_pdh)
+updateLbl(lbl_pdl, i_showPDL, pdLow,   "PDL", c_pdl)
+updateLbl(lbl_pdc, i_showPDC, pdClose, "PDC", c_pdc)
+
+updateLbl(lbl_pwo, i_showPWO, pwOpen,  "PWO", c_pwo)
+updateLbl(lbl_pwh, i_showPWH, pwHigh,  "PWH", c_pwh)
+updateLbl(lbl_pwl, i_showPWL, pwLow,   "PWL", c_pwl)
+updateLbl(lbl_pwc, i_showPWC, pwClose, "PWC", c_pwc)
+
+updateLbl(lbl_pmoo, i_showPMoO, pmmoOpen,  "PMoO", c_pmoo)
+updateLbl(lbl_pmoh, i_showPMoH, pmmoHigh,  "PMoH", c_pmoh)
+updateLbl(lbl_pmol, i_showPMoL, pmmoLow,   "PMoL", c_pmol)
+updateLbl(lbl_pmoc, i_showPMoC, pmmoClose, "PMoC", c_pmoc)

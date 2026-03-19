@@ -1,0 +1,1317 @@
+//@version=6
+indicator("Smart Money Concepts + FVG + ICT AMS + Real Time Structures + Displacement OB + Stop Hunt (SMC)", "SMC+DOB+SH", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+
+// ====================================================================
+// SETTINGS - SMART MONEY CONCEPTS
+// ====================================================================
+BULLISH_LEG                     = 1
+BEARISH_LEG                     = 0
+BULLISH                         = +1
+BEARISH                         = -1
+GREEN                           = #089981
+RED                             = #F23645
+BLUE                            = #2157f3
+GRAY                            = #878b94
+HISTORICAL                      = 'Historical'
+PRESENT                         = 'Present'
+ALL                             = 'All'
+BOS                             = 'BOS'
+CHOCH                           = 'CHoCH'
+TINY                            = size.tiny
+SMALL                           = size.small
+NORMAL                          = size.normal
+ATR                             = 'Atr'
+RANGE                           = 'Cumulative Mean Range'
+CLOSE                           = 'Close'
+HIGHLOW                         = 'High/Low'
+SOLID                           = '⎯⎯⎯'
+DASHED                          = '----'
+DOTTED                          = '····'
+
+// Smart Money Concepts Settings
+SMART_GROUP                     = 'Smart Money Concepts'
+GAPS_GROUP                      = 'Fair Value Gaps'
+BLOCKS_GROUP                    = 'Order Blocks'
+EQUAL_GROUP                     = 'EQH/EQL'
+
+modeInput                       = input.string(HISTORICAL, 'Mode', group=SMART_GROUP, options=[HISTORICAL, PRESENT])
+futureExtension = input.int(10, "Future Extension", minval=1, maxval=50, group=SMART_GROUP, tooltip="Número de barras a proyectar en el futuro para FVG y Order Blocks")
+suppressRtLabelsInput   = input.bool(true, "Hide RT labels when ICT AMS active", group=SMART_GROUP, tooltip="Oculta RT Internal/Swing labels cuando ICT AMS (ST/IT) está activo")
+bullLabelColor          = input.color(#089981, 'Bullish Label / Marker Color', group=SMART_GROUP, inline='lbl1')
+bearLabelColor          = input.color(#F23645, 'Bearish Label / Marker Color', group=SMART_GROUP, inline='lbl2')
+labelSizeInput          = input.string('Tiny', 'CHoCH & BoS Label Size', group=SMART_GROUP, options=['Tiny', 'Small', 'Normal'], inline='lbl3')
+bullLabelGap            = input.float(0.0, 'Bullish Label Gap', group=SMART_GROUP, minval=0.0, maxval=2.0, step=0.05, inline='gap', tooltip='ATR multiplier — distance above the line')
+bearLabelGap            = input.float(0.3, 'Bearish Label Gap', group=SMART_GROUP, minval=0.0, maxval=2.0, step=0.05, inline='gap', tooltip='ATR multiplier — distance below the line')
+
+// ====================================================================
+// SETTINGS - STOP HUNT
+// ====================================================================
+string SH_SETTINGS_GROUP = '············ STOP HUNT SETTINGS ············'
+string SH_VISUALS_GROUP  = '············ STOP HUNT VISUALS ············'
+
+bool   shShowRaidLines   = input.bool(true,  'Show raid lines ?',                group=SH_SETTINGS_GROUP)
+bool   shShowRaidDots    = input.bool(true,  'Show raid dots ?',                 group=SH_SETTINGS_GROUP)
+int    shMaxBarsBack     = input.int(200,    'Max bars back to check hunts?',    minval=10, maxval=500, group=SH_SETTINGS_GROUP, tooltip='How many bars back to search for fractal levels that may have been swept.')
+bool   shRecentFVGHunt   = input.bool(false, 'Recent FVG hunt (read tooltip)?',  group=SH_SETTINGS_GROUP, tooltip='When enabled, only marks stop hunts where the swept fractal level also sits inside a recent Fair Value Gap zone. This provides additional filtering for a cleaner chart.')
+
+color  shHuntLinesColor  = input.color(#F23645, 'Top & Bottom Stop Hunts Color', group=SH_VISUALS_GROUP, inline='shc')
+string shLinesStyle      = input.string('Dotted', 'Lines style',                 options=['Solid', 'Dashed', 'Dotted'], group=SH_VISUALS_GROUP, inline='shls')
+int    shLinesWidth      = input.int(1, 'Lines Width ?',                         minval=1, maxval=5, group=SH_VISUALS_GROUP, inline='shlw')
+string shLabelSizeInput  = input.string('Tiny', 'Stop Hunt Label Size',            options=['Tiny', 'Small', 'Normal'], group=SH_VISUALS_GROUP, inline='shsz')
+
+// Order Blocks
+showInternalOrderBlocksInput    = input(true,       'Internal Order Blocks', group=BLOCKS_GROUP, inline='iob')
+internalOrderBlocksSizeInput    = input.int(5,      '', group=BLOCKS_GROUP, minval=1, maxval=20, inline='iob')
+showSwingOrderBlocksInput       = input(false,      'Swing Order Blocks', group=BLOCKS_GROUP, inline='ob')
+swingOrderBlocksSizeInput       = input.int(5,      '', group=BLOCKS_GROUP, minval=1, maxval=20, inline='ob')
+orderBlockFilterInput           = input.string('Atr', 'Order Block Filter', group=BLOCKS_GROUP, options=[ATR, RANGE])
+orderBlockMitigationInput       = input.string(HIGHLOW, 'Order Block Mitigation', group=BLOCKS_GROUP, options=[CLOSE, HIGHLOW])
+
+// Order Block Colors and Styles
+internalBullishOrderBlockColor  = input.color(color.new(#3179f5, 85), 'Internal Bullish OB', group=BLOCKS_GROUP, inline='ib')
+internalBearishOrderBlockColor  = input.color(color.new(#f77c80, 85), 'Internal Bearish OB', group=BLOCKS_GROUP, inline='ib2')
+swingBullishOrderBlockColor     = input.color(color.new(#1848cc, 85), 'Swing Bullish OB', group=BLOCKS_GROUP, inline='sb')
+swingBearishOrderBlockColor     = input.color(color.new(#b22833, 85), 'Swing Bearish OB', group=BLOCKS_GROUP, inline='sb2')
+
+// Order Block Line Customization
+showOrderBlockLinesInput        = input.bool(true, 'Show Projection Lines', group=BLOCKS_GROUP, inline='lines')
+obLineStyleInput                = input.string('Dotted', 'Line Style', options=['Solid', 'Dashed', 'Dotted'], group=BLOCKS_GROUP, inline='lines')
+obLineWidthInput                = input.int(1, 'Line Width', minval=1, maxval=5, group=BLOCKS_GROUP, inline='lines')
+obLineOpacityInput              = input.int(50, 'Line/Border Opacity %', minval=0, maxval=100, group=BLOCKS_GROUP, inline='lines', tooltip="Afecta tanto las líneas de proyección como el borde del cloud")
+
+// ████████████████████████████████████████████████████████████████████████████████████████████████████
+// DISPLACEMENT ORDER BLOCKS (SMC)
+// ████████████████████████████████████████████████████████████████████████████████████████████████████
+SMC_OB_GROUP                    = 'Displacement Order Blocks (SMC)'
+
+smc_showOrderBlocks             = input.bool(false, 'Show Displacement OBs', group=SMC_OB_GROUP)
+smc_obAtrMult                   = input.float(1.5, 'Displacement ATR Mult', step=0.1, group=SMC_OB_GROUP)
+smc_obExtend                    = input.int(150, 'Projection Bars', minval=20, group=SMC_OB_GROUP)
+smc_maxOBs                      = input.int(30, 'Max OBs to Keep', minval=10, maxval=100, group=SMC_OB_GROUP)
+// ████████████████████████████████████████████████████████████████████████████████████████████████████
+
+// Equal Highs/Lows
+showEqualHighsLowsInput         = input(true,       'Equal High/Low', group=EQUAL_GROUP)
+equalHighsLowsLengthInput       = input.int(3,      'Bars Confirmation', group=EQUAL_GROUP, minval=1)
+equalHighsLowsThresholdInput    = input.float(0.1,  'Threshold', group=EQUAL_GROUP, minval=0, maxval=0.5, step=0.1)
+equalHighsLowsSizeInput         = input.string(TINY, 'Label Size', group=EQUAL_GROUP, options=[TINY, SMALL, NORMAL])
+
+// ====================================================================
+// SETTINGS - REAL TIME INTERNAL STRUCTURE
+// ====================================================================
+RT_INTERNAL_GROUP = "Real Time Internal Structure"
+rtInternalBosInput = input.bool(true, "BoS Market Structures", group=RT_INTERNAL_GROUP)
+rtInternalChochInput = input.bool(true, "CHoCH Market Structures", group=RT_INTERNAL_GROUP)
+rtInternalShowLabelsInput = input.bool(true, "Show Labels", group=RT_INTERNAL_GROUP)
+rtInternalLineStyleInput = input.string("Dashed", "Line Style", options=["Solid", "Dashed", "Dotted"], group=RT_INTERNAL_GROUP)
+rtInternalLineWidthInput = input.int(1, "Width", minval=1, group=RT_INTERNAL_GROUP)
+rtInternalBullColorInput = input.color(#089981, "Bullish Color", group=RT_INTERNAL_GROUP)
+rtInternalBearColorInput = input.color(#f23645, "Bearish Color", group=RT_INTERNAL_GROUP)
+
+// ====================================================================
+// SETTINGS - REAL TIME SWING STRUCTURE
+// ====================================================================
+RT_SWING_GROUP = "Real Time Swing Structure"
+rtSwingBosInput = input.bool(true, "BoS Market Structures", group=RT_SWING_GROUP)
+rtSwingChochInput = input.bool(true, "CHoCH Market Structures", group=RT_SWING_GROUP)
+rtSwingShowLabelsInput = input.bool(true, "Show Labels", group=RT_SWING_GROUP)
+rtSwingLineStyleInput = input.string("Solid", "Line Style", options=["Solid", "Dashed", "Dotted"], group=RT_SWING_GROUP)
+rtSwingLineWidthInput = input.int(1, "Width", minval=1, group=RT_SWING_GROUP)
+rtSwingBullColorInput = input.color(#089981, "Bullish Color", group=RT_SWING_GROUP)
+rtSwingBearColorInput = input.color(#f23645, "Bearish Color", group=RT_SWING_GROUP)
+
+// ====================================================================
+// SETTINGS - ICT ANCHORED MARKET STRUCTURES
+// ====================================================================
+ICT_GROUP = 'ICT Anchored Market Structures'
+
+// Short Term Structures
+stGroup = 'Short Term Structures'
+stBosMS = input.bool(true, 'BoS Market Structures', group=stGroup)
+stChochMS = input.bool(true, 'CHoCH Market Structures', group=stGroup)
+stShowLabels = input.bool(true, 'Show Labels', group=stGroup)
+stMSLineStyle = input.string('Dotted', '  Line Style', options=['Solid', 'Dashed', 'Dotted'], group=stGroup, inline='LN')
+stMSLineWidth = input.int(1, 'Width', minval=1, group=stGroup, inline='LN')
+stBullMSColor = input.color(#089981, 'Swing and Line Colors, Bullish', group=stGroup, inline='MS')
+stBearMSColor = input.color(#f23645, 'Bearish', group=stGroup, inline='MS')
+// Intermediate Term Structures
+itGroup = 'Intermediate Term Structures'
+itBosMS = input.bool(true, 'BoS Market Structures', group=itGroup)
+itChochMS = input.bool(true, 'CHoCH Market Structures', group=itGroup)
+itShowLabels = input.bool(true, 'Show Labels', group=itGroup)
+itMSLineStyle = input.string('Dashed', '  Line Style', options=['Solid', 'Dashed', 'Dotted'], group=itGroup, inline='LN')
+itMSLineWidth = input.int(1, 'Width', minval=1, group=itGroup, inline='LN')
+itBullMSColor = input.color(#089981, 'Swing and Line Colors, Bullish', group=itGroup, inline='MS')
+itBearMSColor = input.color(#f23645, 'Bearish', group=itGroup, inline='MS')
+
+// Long Term Structures
+ltGroup = 'Long Term Structures'
+ltBosMS = input.bool(true, 'BoS Market Structures', group=ltGroup)
+ltChochMS = input.bool(true, 'CHoCH Market Structures', group=ltGroup)
+ltShowLabels = input.bool(true, 'Show Labels', group=ltGroup)
+ltMSLineStyle = input.string('Solid', '  Line Style', options=['Solid', 'Dashed', 'Dotted'], group=ltGroup, inline='LN')
+ltMSLineWidth = input.int(1, 'Width', minval=1, group=ltGroup, inline='LN')
+ltBullMSColor = input.color(#089981, 'Swing and Line Colors, Bullish', group=ltGroup, inline='MS')
+ltBearMSColor = input.color(#f23645, 'Bearish', group=ltGroup, inline='MS')
+ltLabelSizeInput = input.string('Tiny', 'Label Size', group=ltGroup, options=['Tiny', 'Small', 'Normal'], inline='LS')
+
+// ====================================================================
+// FVG SETTINGS
+// ====================================================================
+threshold1 = input.float(0.01, "Threshold 1 (%)", minval=0.001, group=GAPS_GROUP)
+threshold2 = input.float(0.025, "Threshold 2 (%)", minval=0.001, group=GAPS_GROUP)
+threshold3 = input.float(0.05, "Threshold 3 (%)", minval=0.001, group=GAPS_GROUP)
+minGapTicks = input.int(2, "Minimum Tick Gap Size", minval=1, group=GAPS_GROUP)
+showT1      = input.bool(true, "Show T1", group=GAPS_GROUP)
+showT2      = input.bool(true, "Show T2", group=GAPS_GROUP)
+showT3             = input.bool(true,  "Show T3",                   group=GAPS_GROUP)
+fvgMitigatedTimesInput = input.int(1,  "Mitigated Times",           group=GAPS_GROUP, minval=1, maxval=10, tooltip="Número de veces que el FVG debe ser cruzado/mitigado antes de considerarse completamente mitigado.")
+fvgMitigationInput = input.bool(true,  "Auto-close on Mitigation",  group=GAPS_GROUP, tooltip="ON: FVG completamente mitigado se vuelve cloud gris con la misma extensión rolling. OFF: FVG mitigado no cambia.")
+showFvgHistInput   = input.bool(false, "Show Historical FVGs",      group=GAPS_GROUP, tooltip="ON: Archiva (deja en pantalla) los FVGs anteriores cuando aparece uno nuevo. OFF: Los borra.")
+maxFvgHistInput    = input.int(3,      "Max FVGs per side",         group=GAPS_GROUP, minval=0, maxval=30, tooltip="Máximo de históricos archivados visibles por tier")
+
+// FVG Colors
+groupColors = "🎨 FVG COLORS"
+bullColorFVG       = input.color(color.new(color.rgb(0, 180, 255), 85), "Bullish FVG Cloud", group=groupColors)
+bearColorFVG       = input.color(color.new(color.rgb(180, 0, 180), 85), "Bearish FVG Cloud", group=groupColors)
+fvgMitigatedColor  = input.color(color.new(color.gray, 95),            "Mitigated FVG Cloud",  group=groupColors, tooltip="Color del FVG cuando es mitigado por completo y Auto-close está ON.")
+borderInvisible = color.new(color.black, 100)
+
+// ====================================================================
+// USER DEFINED TYPES
+// ====================================================================
+
+// Smart Money Concepts Types
+type alerts
+    bool internalBullishBOS         = false
+    bool internalBearishBOS         = false
+    bool internalBullishCHoCH       = false
+    bool internalBearishCHoCH       = false
+    bool swingBullishBOS            = false
+    bool swingBearishBOS            = false
+    bool swingBullishCHoCH          = false
+    bool swingBearishCHoCH          = false
+    bool internalBullishOrderBlock  = false
+    bool internalBearishOrderBlock  = false
+    bool swingBullishOrderBlock     = false
+    bool swingBearishOrderBlock     = false
+    bool equalHighs                 = false
+    bool equalLows                  = false
+
+type trailingExtremes
+    float top
+    float bottom
+    int barTime
+    int barIndex
+    int lastTopTime
+    int lastBottomTime
+
+type trend
+    int bias
+
+type equalDisplay
+    line l_ine      = na
+    label l_abel    = na
+
+type pivot
+    float currentLevel
+    float lastLevel
+    bool crossed
+    int barTime     = time
+    int barIndex    = bar_index
+
+type orderBlock
+    float barHigh
+    float barLow
+    int barTime
+    int barIndex
+    int bias
+
+type SMC_OrderBlock
+    box   b
+    line  lineTop
+    line  lineBot
+    float top
+    float bot
+    int   bias       // 1 bullish, -1 bearish
+    bool  mitigated
+
+// ICT AMS Types
+type BAR
+    float open  = open
+    float high  = high
+    float low   = low
+    float close = close
+    int index = bar_index
+
+type ICTMS
+    float   lastPrice
+    float   midPrice
+    float   prevPrice
+    int     lastIndex
+    int     midIndex
+    int     prevIndex
+    label   lastLabel
+    label   midLabel
+    label   prevLabel
+    bool    isCrossed
+    bool    isConfirmed
+    int     marketStructure
+    line    msLine
+    label   msLabel
+    box     swpBox
+
+type MS
+    int type = 0
+
+// ====================================================================
+// GENERIC VARIABLES
+// ====================================================================
+BAR bar = BAR.new()
+// Smart Money Concepts Variables
+var pivot swingHigh                 = pivot.new(na, na, false)
+var pivot swingLow                  = pivot.new(na, na, false)
+var pivot internalHigh              = pivot.new(na, na, false)
+var pivot internalLow               = pivot.new(na, na, false)
+var pivot equalHigh                 = pivot.new(na, na, false)
+var pivot equalLow                  = pivot.new(na, na, false)
+var trend swingTrend                = trend.new(0)
+var trend internalTrend             = trend.new(0)
+var equalDisplay equalHighDisplay   = equalDisplay.new()
+var equalDisplay equalLowDisplay    = equalDisplay.new()
+var array<float> parsedHighs        = array.new<float>()
+var array<float> parsedLows         = array.new<float>()
+var array<int> times                = array.new<int>()
+var trailingExtremes trailing       = trailingExtremes.new()
+var array<orderBlock> swingOrderBlocks      = array.new<orderBlock>()
+var array<orderBlock> internalOrderBlocks   = array.new<orderBlock>()
+var array<box> swingOrderBlocksBoxes        = array.new<box>()
+var array<box> internalOrderBlocksBoxes     = array.new<box>()
+var array<line> swingOrderBlockLinesHigh    = array.new<line>()
+var array<line> swingOrderBlockLinesLow     = array.new<line>()
+var array<line> internalOrderBlockLinesHigh = array.new<line>()
+var array<line> internalOrderBlockLinesLow  = array.new<line>()
+var array<box> swingOrderBlocksHistoricalBoxes = array.new_box()
+var array<box> internalOrderBlocksHistoricalBoxes = array.new_box()
+var array<SMC_OrderBlock> smcOBList = array.new<SMC_OrderBlock>()
+
+alerts currentAlerts                = alerts.new()
+
+// ICT AMS Variables
+var ICTMS stLow  = ICTMS.new()
+var ICTMS stHigh = ICTMS.new()
+var MS stMS = MS.new()
+var ICTMS itLow  = ICTMS.new()
+var ICTMS itHigh = ICTMS.new()
+var MS itMS = MS.new()
+var ICTMS ltLow  = ICTMS.new()
+var ICTMS ltHigh = ICTMS.new()
+var MS ltMS = MS.new()
+
+// Real Time Structure Variables
+var pivot rtInternalHigh = pivot.new(na, na, false)
+var pivot rtInternalLow = pivot.new(na, na, false)
+var trend rtInternalTrend = trend.new(0)
+var pivot rtSwingHigh = pivot.new(na, na, false)
+var pivot rtSwingLow = pivot.new(na, na, false)
+var trend rtSwingTrend = trend.new(0)
+
+// ATR variable for calculations
+var float atrMeasure = na
+atrMeasure := ta.atr(200)
+
+// Stop Hunt Variables
+var string shLineStyleEnum = switch shLinesStyle
+    'Solid'  => line.style_solid
+    'Dashed' => line.style_dashed
+    'Dotted' => line.style_dotted
+    => line.style_dotted
+var array<float> shFracHighLevels  = array.new<float>()
+var array<int>   shFracHighIndices = array.new<int>()
+var array<float> shFracLowLevels   = array.new<float>()
+var array<int>   shFracLowIndices  = array.new<int>()
+var array<float> shFvgTopLevels    = array.new<float>()
+var array<float> shFvgBottomLevels = array.new<float>()
+int shMaxStored = shMaxBarsBack * 2
+
+// ⚡ OPTIMIZATION: Calc timeDiff once to avoid repeated array index hits
+var int timeDiff = na
+if bar_index == 1
+    timeDiff := time - time[1]
+else if bar_index == 0
+    timeDiff := 86400000
+
+var int obBorderOpacity = 100 - obLineOpacityInput
+
+// Resolved label size from string input
+var string resolvedLabelSize = switch labelSizeInput
+    'Tiny'   => size.tiny
+    'Small'  => size.small
+    'Normal' => size.normal
+    => size.tiny
+
+var string resolvedShLabelSize = switch shLabelSizeInput
+    'Tiny'   => size.tiny
+    'Small'  => size.small
+    'Normal' => size.normal
+    => size.tiny
+
+var string resolvedLtLabelSize = switch ltLabelSizeInput
+    'Tiny'   => size.tiny
+    'Small'  => size.small
+    'Normal' => size.normal
+    => size.tiny
+
+// ⚡ OPTIMIZATION: Calculate input string switches only once on init
+var string obLineStyleEnum = switch obLineStyleInput
+    'Solid'  => line.style_solid
+    'Dashed' => line.style_dashed
+    'Dotted' => line.style_dotted
+
+var string stMSLineStyleEnum = switch stMSLineStyle
+    'Solid'  => line.style_solid
+    'Dashed' => line.style_dashed
+    'Dotted' => line.style_dotted
+    => line.style_dotted
+
+var string itMSLineStyleEnum = switch itMSLineStyle
+    'Solid'  => line.style_solid
+    'Dashed' => line.style_dashed
+    'Dotted' => line.style_dotted
+    => line.style_dashed
+
+var string ltMSLineStyleEnum = switch ltMSLineStyle
+    'Solid'  => line.style_solid
+    'Dashed' => line.style_dashed
+    'Dotted' => line.style_dotted
+    => line.style_solid
+
+var string rtInternalLineStyleEnum = switch rtInternalLineStyleInput
+    'Solid'  => line.style_solid
+    'Dashed' => line.style_dashed
+    'Dotted' => line.style_dotted
+    => line.style_dashed
+
+var string rtSwingLineStyleEnum = switch rtSwingLineStyleInput
+    'Solid'  => line.style_solid
+    'Dashed' => line.style_dashed
+    'Dotted' => line.style_dotted
+    => line.style_solid
+
+var bool isHistorical = modeInput == HISTORICAL
+
+// Order Block Mitigation Sources
+bearishOrderBlockMitigationSource = orderBlockMitigationInput == CLOSE ? close : high
+bullishOrderBlockMitigationSource = orderBlockMitigationInput == CLOSE ? close : low
+
+// ====================================================================
+// FUNCTIONS / METHODS
+// ====================================================================
+
+// Smart Money Concepts Functions
+leg(int size) =>
+    var leg     = 0
+    newLegHigh  = high[size] > ta.highest(size)
+    newLegLow   = low[size]  < ta.lowest(size)
+
+    if newLegHigh
+        leg := BEARISH_LEG
+    else if newLegLow
+        leg := BULLISH_LEG
+    leg
+
+startOfNewLeg(int leg)      => ta.change(leg) != 0
+startOfBearishLeg(int leg)  => ta.change(leg) == -1
+startOfBullishLeg(int leg)  => ta.change(leg) == +1
+
+drawEqualHighLow(pivot p_ivot, float level, int size, bool equalHigh) =>
+    equalDisplay e_qualDisplay = equalHigh ? equalHighDisplay : equalLowDisplay
+
+    string tag          = 'EQL'
+    color equalColor    = GREEN
+    string labelStyle   = label.style_label_up
+
+    if equalHigh
+        tag         := 'EQH'
+        equalColor  := RED
+        labelStyle  := label.style_label_down
+
+    if modeInput == PRESENT
+        line.delete(    e_qualDisplay.l_ine)
+        label.delete(   e_qualDisplay.l_abel)
+
+    e_qualDisplay.l_ine     := line.new(p_ivot.barTime, p_ivot.currentLevel, time[size], level, xloc = xloc.bar_time, color = equalColor, style = line.style_dotted)
+    labelPosition           = math.round(0.5*(p_ivot.barIndex + bar_index - size))
+    e_qualDisplay.l_abel    := label.new(labelPosition, level, tag, xloc.bar_index, color = color(na), textcolor = equalColor, style = labelStyle, size = equalHighsLowsSizeInput)
+
+getCurrentStructure(int size, int currentLeg, bool equalHighLow=false, bool internal=false) =>
+    newPivot                = startOfNewLeg(currentLeg)
+    pivotLow                = startOfBullishLeg(currentLeg)
+    pivotHigh               = startOfBearishLeg(currentLeg)
+
+    if newPivot
+        if pivotLow
+            pivot p_ivot    = equalHighLow ? equalLow : internal ? internalLow : swingLow
+
+            if equalHighLow and math.abs(p_ivot.currentLevel - low[size]) < equalHighsLowsThresholdInput * atrMeasure            
+                drawEqualHighLow(p_ivot, low[size], size, false)
+                currentAlerts.equalLows := true
+
+            p_ivot.lastLevel    := p_ivot.currentLevel
+            p_ivot.currentLevel := low[size]
+            p_ivot.crossed      := false
+            p_ivot.barTime      := time[size]
+            p_ivot.barIndex     := bar_index[size]
+
+            if not equalHighLow and not internal
+                trailing.bottom         := p_ivot.currentLevel
+                trailing.barTime        := p_ivot.barTime
+                trailing.barIndex       := p_ivot.barIndex
+                trailing.lastBottomTime := p_ivot.barTime
+        else
+            pivot p_ivot = equalHighLow ? equalHigh : internal ? internalHigh : swingHigh
+
+            if equalHighLow and math.abs(p_ivot.currentLevel - high[size]) < equalHighsLowsThresholdInput * atrMeasure
+                drawEqualHighLow(p_ivot,high[size],size,true)
+                currentAlerts.equalHighs := true           
+
+            p_ivot.lastLevel    := p_ivot.currentLevel
+            p_ivot.currentLevel := high[size]
+            p_ivot.crossed      := false
+            p_ivot.barTime      := time[size]
+            p_ivot.barIndex     := bar_index[size]
+
+            if not equalHighLow and not internal
+                trailing.top            := p_ivot.currentLevel
+                trailing.barTime        := p_ivot.barTime
+                trailing.barIndex       := p_ivot.barIndex
+                trailing.lastTopTime    := p_ivot.barTime
+// ⚡ OPTIMIZATION: Removed unused drawStructure() — labels drawn via renderStructures/displayRealTimeStructure
+
+deleteOrderBlocks(bool internal=false) =>
+    array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
+    array<box> historicalBoxes = internal ? internalOrderBlocksHistoricalBoxes : swingOrderBlocksHistoricalBoxes
+    int arraySize = array.size(orderBlocks)
+
+    if arraySize > 0
+        int histSize = array.size(historicalBoxes)
+        for i = arraySize - 1 to 0
+            eachOrderBlock = array.get(orderBlocks, i)
+            bool crossedOderBlock = false
+            if eachOrderBlock.bias == BEARISH and bearishOrderBlockMitigationSource > eachOrderBlock.barHigh
+                crossedOderBlock := true
+                if internal
+                    currentAlerts.internalBearishOrderBlock := true
+                else
+                    currentAlerts.swingBearishOrderBlock    := true
+            else if eachOrderBlock.bias == BULLISH and bullishOrderBlockMitigationSource < eachOrderBlock.barLow
+                crossedOderBlock := true
+                if internal
+                    currentAlerts.internalBullishOrderBlock := true
+                else
+                    currentAlerts.swingBullishOrderBlock    := true
+
+            if crossedOderBlock
+                if i < histSize
+                    box historicalBox = array.get(historicalBoxes, i)
+                    box.delete(historicalBox)
+                    array.remove(historicalBoxes, i)
+                    histSize -= 1
+                array.remove(orderBlocks, i)
+
+storeOrdeBlock(pivot p_ivot, bool internal=false, int bias) =>
+    if (not internal and showSwingOrderBlocksInput) or (internal and showInternalOrderBlocksInput)
+        int parsedIndex = na
+
+        if not na(p_ivot.barIndex) and p_ivot.barIndex < bar_index
+            int startIdx = p_ivot.barIndex
+            int endIdx   = bar_index - 1
+            if bias == BEARISH
+                float bestVal = na
+                for j = startIdx to endIdx
+                    float v = array.get(parsedHighs, j)
+                    if na(bestVal) or v > bestVal
+                        bestVal := v
+                        parsedIndex := j
+            else
+                float bestVal = na
+                for j = startIdx to endIdx
+                    float v = array.get(parsedLows, j)
+                    if na(bestVal) or v < bestVal
+                        bestVal := v
+                        parsedIndex := j
+
+        int arrSize = array.size(parsedHighs)
+        if not na(parsedIndex) and parsedIndex >= 0 and parsedIndex < arrSize and parsedIndex < array.size(times)
+            orderBlock o_rderBlock = orderBlock.new(array.get(parsedHighs, parsedIndex), array.get(parsedLows, parsedIndex), array.get(times, parsedIndex), parsedIndex, bias)
+            array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
+
+            if array.size(orderBlocks) >= 100
+                array.pop(orderBlocks)
+            array.unshift(orderBlocks, o_rderBlock)
+
+drawOrderBlocks(bool internal = false) =>
+    array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
+    int orderBlocksSize = array.size(orderBlocks)
+    int maxOrderBlocks  = internal ? internalOrderBlocksSizeInput : swingOrderBlocksSizeInput
+    int visibleCount    = math.min(maxOrderBlocks, orderBlocksSize)
+
+    array<box> b_oxes          = internal ? internalOrderBlocksBoxes : swingOrderBlocksBoxes
+    array<line> linesHighArray = internal ? internalOrderBlockLinesHigh : swingOrderBlockLinesHigh
+    array<line> linesLowArray  = internal ? internalOrderBlockLinesLow  : swingOrderBlockLinesLow
+
+    if visibleCount > 0
+        for i = 0 to visibleCount - 1
+            eachOrderBlock = array.get(orderBlocks, i)
+
+            color baseColor = internal ? (eachOrderBlock.bias == BEARISH ? internalBearishOrderBlockColor : internalBullishOrderBlockColor) : (eachOrderBlock.bias == BEARISH ? swingBearishOrderBlockColor : swingBullishOrderBlockColor)
+            color borderColor = color.new(baseColor, obBorderOpacity)
+
+            box b_ox = array.get(b_oxes, i)
+            b_ox.set_left(eachOrderBlock.barTime - timeDiff)
+            b_ox.set_right(eachOrderBlock.barTime + timeDiff)
+            b_ox.set_top(eachOrderBlock.barHigh)
+            b_ox.set_bottom(eachOrderBlock.barLow)
+            b_ox.set_border_color(borderColor)
+            b_ox.set_border_style(line.style_dotted)
+            b_ox.set_border_width(1)
+            b_ox.set_bgcolor(baseColor)
+
+            if showOrderBlockLinesInput
+                if array.size(linesHighArray) <= i
+                    // USING xloc.bar_time to avoid "bar index too far" runtime error
+                    array.push(linesHighArray, line.new(na, na, na, na, xloc=xloc.bar_time, color=borderColor, style=obLineStyleEnum, width=obLineWidthInput))
+                    array.push(linesLowArray,  line.new(na, na, na, na, xloc=xloc.bar_time, color=borderColor, style=obLineStyleEnum, width=obLineWidthInput))
+
+                line lineHigh = array.get(linesHighArray, i)
+                line lineLow  = array.get(linesLowArray,  i)
+                int obStartTime = eachOrderBlock.barTime + timeDiff
+                int obEndTime   = obStartTime < time ? time + futureExtension * timeDiff : obStartTime
+
+                line.set_xy1(lineHigh, obStartTime, eachOrderBlock.barHigh)
+                line.set_xy2(lineHigh, obEndTime, eachOrderBlock.barHigh)
+                line.set_color(lineHigh, borderColor)
+                line.set_style(lineHigh, obLineStyleEnum)
+                line.set_width(lineHigh, obLineWidthInput)
+
+                line.set_xy1(lineLow, obStartTime, eachOrderBlock.barLow)
+                line.set_xy2(lineLow, obEndTime, eachOrderBlock.barLow)
+                line.set_color(lineLow, borderColor)
+                line.set_style(lineLow, obLineStyleEnum)
+                line.set_width(lineLow, obLineWidthInput)
+            else
+                if array.size(linesHighArray) > i
+                    line.set_xy1(array.get(linesHighArray, i), na, na)
+                    line.set_xy2(array.get(linesHighArray, i), na, na)
+                if array.size(linesLowArray) > i
+                    line.set_xy1(array.get(linesLowArray, i), na, na)
+                    line.set_xy2(array.get(linesLowArray, i), na, na)
+
+    int boxesCount = array.size(b_oxes)
+    if boxesCount > visibleCount
+        for i = visibleCount to boxesCount - 1
+            box hiddenBox = array.get(b_oxes, i)
+            hiddenBox.set_left(na)
+            hiddenBox.set_right(na)
+            hiddenBox.set_top(na)
+            hiddenBox.set_bottom(na)
+
+    int highLinesCount = array.size(linesHighArray)
+    if highLinesCount > visibleCount
+        for i = visibleCount to highLinesCount - 1
+            line hiddenHigh = array.get(linesHighArray, i)
+            line.set_xy1(hiddenHigh, na, na)
+            line.set_xy2(hiddenHigh, na, na)
+
+    int lowLinesCount = array.size(linesLowArray)
+    if lowLinesCount > visibleCount
+        for i = visibleCount to lowLinesCount - 1
+            line hiddenLow = array.get(linesLowArray, i)
+            line.set_xy1(hiddenLow, na, na)
+            line.set_xy2(hiddenLow, na, na)
+
+drawHistoricalOrderBlocks(bool internal = false) =>
+    array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
+    array<box> historicalBoxes    = internal ? internalOrderBlocksHistoricalBoxes : swingOrderBlocksHistoricalBoxes
+    int orderBlocksSize = array.size(orderBlocks)
+
+    if orderBlocksSize > 0
+        for i = 0 to orderBlocksSize - 1
+            eachOrderBlock = array.get(orderBlocks, i)
+
+            color baseColor = na
+            if internal
+                baseColor := eachOrderBlock.bias == BEARISH ? internalBearishOrderBlockColor : internalBullishOrderBlockColor
+            else
+                baseColor := eachOrderBlock.bias == BEARISH ? swingBearishOrderBlockColor : swingBullishOrderBlockColor
+
+            box historicalBox = na
+            if i < array.size(historicalBoxes)
+                historicalBox := array.get(historicalBoxes, i)
+
+            if na(historicalBox)
+                historicalBox := box.new(na, na, na, na, xloc=xloc.bar_time, extend=extend.none)
+                array.push(historicalBoxes, historicalBox)
+
+            historicalBox.set_left(eachOrderBlock.barTime - timeDiff)
+            historicalBox.set_right(eachOrderBlock.barTime + timeDiff)
+            historicalBox.set_top(eachOrderBlock.barHigh)
+            historicalBox.set_bottom(eachOrderBlock.barLow)
+
+            borderColor = color.new(baseColor, obBorderOpacity)
+            historicalBox.set_border_color(borderColor)
+            historicalBox.set_border_style(line.style_dotted)
+            historicalBox.set_border_width(1)
+            historicalBox.set_bgcolor(baseColor)
+
+    int historicalSize = array.size(historicalBoxes)
+    if historicalSize > orderBlocksSize
+        for i = historicalSize - 1 to orderBlocksSize
+            box.delete(array.get(historicalBoxes, i))
+            array.remove(historicalBoxes, i)
+
+displayStructure(bool internal=false) =>
+    pivot p_ivot    = internal ? internalHigh : swingHigh
+    trend t_rend    = internal ? internalTrend : swingTrend
+    if ta.crossover(close, p_ivot.currentLevel) and not p_ivot.crossed
+        string tag = t_rend.bias == BEARISH ? CHOCH : BOS
+        if internal
+            currentAlerts.internalBullishCHoCH  := tag == CHOCH
+            currentAlerts.internalBullishBOS    := tag == BOS
+        else
+            currentAlerts.swingBullishCHoCH     := tag == CHOCH
+            currentAlerts.swingBullishBOS       := tag == BOS
+        p_ivot.crossed  := true
+        t_rend.bias     := BULLISH
+        if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
+            storeOrdeBlock(p_ivot, internal, BULLISH)
+
+    p_ivot          := internal ? internalLow : swingLow
+    if ta.crossunder(close, p_ivot.currentLevel) and not p_ivot.crossed
+        string tag = t_rend.bias == BULLISH ? CHOCH : BOS
+        if internal
+            currentAlerts.internalBearishCHoCH  := tag == CHOCH
+            currentAlerts.internalBearishBOS    := tag == BOS
+        else
+            currentAlerts.swingBearishCHoCH     := tag == CHOCH
+            currentAlerts.swingBearishBOS       := tag == BOS
+        p_ivot.crossed := true
+        t_rend.bias := BEARISH
+        if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
+            storeOrdeBlock(p_ivot, internal, BEARISH)
+
+// ICT AMS Functions
+queryPatterns(lastPrice, midPrice, prevPrice, isSwingHigh) =>
+    if isSwingHigh
+        prevPrice < midPrice and midPrice >= lastPrice
+    else
+        prevPrice > midPrice and midPrice <= lastPrice
+
+method queryPatterns(ICTMS this, isSwingHigh) =>
+    if isSwingHigh
+        this.prevPrice < this.midPrice and this.midPrice >= this.lastPrice
+    else
+        this.prevPrice > this.midPrice and this.midPrice <= this.lastPrice
+
+method updatePattern(ICTMS this, price, index) =>
+    this.isCrossed := false
+    this.prevPrice := this.midPrice
+    this.midPrice := this.lastPrice
+    this.lastPrice := price
+    this.prevIndex := this.midIndex
+    this.midIndex := this.lastIndex
+    this.lastIndex := index
+    this.prevLabel := this.midLabel
+    this.midLabel := this.lastLabel
+
+method setType(MS this, value) =>
+    this.type := value
+
+method renderStructures(ICTMS this, isBullish, marketStructure, termText, color, string lineStyleEnum, width, showBosLine, showChochLine, showLabels) =>
+    condition = isBullish ? bar.close > this.lastPrice : bar.close < this.lastPrice
+    if condition and not this.isCrossed
+        this.isCrossed := true
+        this.isConfirmed := false
+
+        bool isBoS = marketStructure.type == (isBullish ? -1 : 1) ? false : true
+        bool isCHoCH = not isBoS
+
+        bool shouldShowLine = (isBoS and showBosLine) or (isCHoCH and showChochLine)
+
+        if shouldShowLine
+            this.msLine := line.new(this.lastIndex, this.lastPrice, bar.index, this.lastPrice, color=color, style=lineStyleEnum, width=width)
+
+            if showLabels
+                string labelText = switch termText
+                    'ST' => isCHoCH ? '☆' : (isBullish ? '△' : '▽')
+                    'IT' => isCHoCH ? '★' : (isBullish ? '▲' : '▼')
+                    => isCHoCH ? 'CHoCH' : 'BoS'
+                bool isLT = termText != 'ST' and termText != 'IT'
+                float labelYOffset = isBullish ? atrMeasure * bullLabelGap : -atrMeasure * bearLabelGap
+
+                this.msLabel := label.new(
+                    x         = math.round(0.5 * (this.lastIndex + bar.index)),
+                    y         = this.lastPrice + labelYOffset,
+                    text      = labelText,
+                    xloc      = xloc.bar_index,
+                    color     = color(na),
+                    textcolor = isBullish ? bullLabelColor : bearLabelColor,
+                    style     = label.style_none,
+                    size      = isLT ? resolvedLtLabelSize : resolvedLabelSize
+                )
+
+        marketStructure.setType(isBullish ? 1 : -1)
+
+// FVG Functions
+// mitFlags int[] by-reference (0=T1 1=T2 2=T3). Returns box.
+f_persistBox(bool trigger, box oldBox, float top, float bot, color bg,
+             box[] histArray, bool isBullish, int[] mitFlags, int tierIdx) =>
+    box  newBox       = oldBox
+    int  hitCount     = array.get(mitFlags, tierIdx)
+    bool wasMitigated = hitCount >= fvgMitigatedTimesInput
+
+// ── Price Mitigation Event (Only when Auto-close is ON and not already mitigated) ──
+    bool isMitigated = false
+    if not na(oldBox) and fvgMitigationInput and not wasMitigated
+        bool crossedThisBar = isBullish ? (low <= box.get_bottom(oldBox)) : (high >= box.get_top(oldBox))
+        if crossedThisBar
+            hitCount += 1
+            array.set(mitFlags, tierIdx, hitCount)
+            if hitCount >= fvgMitigatedTimesInput
+                isMitigated := true
+
+    // ── Old FVG Replaced by a New FVG (Trigger) ─────────────────────────
+    if not na(oldBox) and trigger
+        if isHistorical and showFvgHistInput and maxFvgHistInput > 0
+            // ARCHIVE: Save copy with its current color (grey if mitigated, colored if not)
+            if array.size(histArray) >= maxFvgHistInput
+                box.delete(array.shift(histArray))
+            array.push(histArray, box.new(
+                left         = box.get_left(oldBox),
+                right        = bar_index,
+                top          = box.get_top(oldBox),
+                bottom       = box.get_bottom(oldBox),
+                bgcolor      = wasMitigated ? fvgMitigatedColor : bg,
+                border_color = borderInvisible,
+                extend       = extend.none))
+        // DELETE the active old box (archived copy stays if showFvgHistInput is ON)
+        box.delete(oldBox)
+        newBox := na
+        array.set(mitFlags, tierIdx, 0)  // new box is unmitigated
+
+    // ── Apply Mitigation (Turn Grey, Keep Extending) ─────────────────────
+    else if isMitigated
+        box.set_bgcolor(oldBox, fvgMitigatedColor)
+        box.set_border_color(oldBox, borderInvisible)
+        // newBox = oldBox (unchanged), so it will extend below
+
+    // ── Extend Box Right (New, Active Colored, or Mitigated Grey) ────────
+    if trigger
+        newBox := box.new(
+            left         = bar_index - 2,
+            right        = bar_index + futureExtension,
+            top          = top,
+            bottom       = bot,
+            bgcolor      = bg,
+            border_color = borderInvisible,
+            extend       = extend.none)
+    else if not na(newBox)
+        box.set_right(newBox, bar_index + futureExtension)
+
+    newBox
+
+// ====================================================================
+// REAL TIME STRUCTURE FUNCTIONS
+// ====================================================================
+
+updateRealTimePivots(int size, int currentLeg, pivot p_high, pivot p_low, trend t_rend) =>
+    newPivot = startOfNewLeg(currentLeg)
+    pivotLow = startOfBullishLeg(currentLeg)
+    pivotHigh = startOfBearishLeg(currentLeg)
+
+    if newPivot
+        if pivotLow
+            p_low.lastLevel := p_low.currentLevel
+            p_low.currentLevel := low[size]
+            p_low.crossed := false
+            p_low.barTime := time[size]
+            p_low.barIndex := bar_index[size]
+        else
+            p_high.lastLevel := p_high.currentLevel
+            p_high.currentLevel := high[size]
+            p_high.crossed := false
+            p_high.barTime := time[size]
+            p_high.barIndex := bar_index[size]
+
+displayRealTimeStructure(pivot p_high, pivot p_low, trend t_rend, bool showBos, bool showChoch, bool showLabels, string lineStyleEnum, int lineWidth, color bullColor, color bearColor) =>
+    if ta.crossover(close, p_high.currentLevel) and not p_high.crossed
+        string tag = t_rend.bias == BEARISH ? CHOCH : BOS
+        bool isBos = tag == BOS
+        bool isChoch = tag == CHOCH
+
+        if (isBos and showBos) or (isChoch and showChoch)
+            color structureColor = bullColor
+            line.new(p_high.barTime, p_high.currentLevel, time, p_high.currentLevel, xloc=xloc.bar_time, color=structureColor, style=lineStyleEnum, width=lineWidth)
+
+            if showLabels
+                label.new(math.round(0.5*(p_high.barIndex+bar_index)), p_high.currentLevel + atrMeasure * bullLabelGap, tag, xloc=xloc.bar_index, color=color(na), textcolor=structureColor, style=label.style_none, size=size.tiny)
+
+        p_high.crossed := true
+        t_rend.bias := BULLISH
+
+    if ta.crossunder(close, p_low.currentLevel) and not p_low.crossed
+        string tag = t_rend.bias == BULLISH ? CHOCH : BOS
+        bool isBos = tag == BOS
+        bool isChoch = tag == CHOCH
+
+        if (isBos and showBos) or (isChoch and showChoch)
+            color structureColor = bearColor
+            line.new(p_low.barTime, p_low.currentLevel, time, p_low.currentLevel, xloc=xloc.bar_time, color=structureColor, style=lineStyleEnum, width=lineWidth)
+
+            if showLabels
+                label.new(math.round(0.5*(p_low.barIndex+bar_index)), p_low.currentLevel - atrMeasure * bearLabelGap, tag, xloc=xloc.bar_index, color=color(na), textcolor=structureColor, style=label.style_none, size=size.tiny)
+
+        p_low.crossed := true
+        t_rend.bias := BEARISH
+
+// ████████████████████████████████████████████████████████████████████████████████████████████████████
+// DISPLACEMENT ORDER BLOCKS (SMC)
+// ████████████████████████████████████████████████████████████████████████████████████████████████████
+
+smc_createOrderBlocks() =>
+    if smc_showOrderBlocks
+        displacement = math.abs(close - open) > atrMeasure * smc_obAtrMult
+
+        // Bullish OB
+        if close > open and low < low[1] and displacement
+            baseColor   = internalBullishOrderBlockColor
+            borderColor = color.new(baseColor, obBorderOpacity)
+            leftTime    = time - timeDiff
+            rightTime   = time + timeDiff
+            box b = box.new(left=leftTime, top=open, right=rightTime, bottom=low,
+                            xloc=xloc.bar_time, bgcolor=baseColor,
+                            border_color=borderColor, border_style=line.style_dotted, border_width=1)
+            line lineTop = na
+            line lineBot = na
+            if showOrderBlockLinesInput
+                startX = bar_index + 1
+                endX   = bar_index + 1 + smc_obExtend
+                lineTop := line.new(x1=startX, y1=open, x2=endX, y2=open, xloc=xloc.bar_index,
+                                    color=borderColor, style=obLineStyleEnum, width=obLineWidthInput)
+                lineBot := line.new(x1=startX, y1=low,  x2=endX, y2=low,  xloc=xloc.bar_index,
+                                    color=borderColor, style=obLineStyleEnum, width=obLineWidthInput)
+            array.unshift(smcOBList, SMC_OrderBlock.new(b, lineTop, lineBot, open, low, BULLISH, false))
+
+        // Bearish OB
+        if close < open and high > high[1] and displacement
+            baseColor   = internalBearishOrderBlockColor
+            borderColor = color.new(baseColor, obBorderOpacity)
+            leftTime    = time - timeDiff
+            rightTime   = time + timeDiff
+            box b = box.new(left=leftTime, top=high, right=rightTime, bottom=open,
+                            xloc=xloc.bar_time, bgcolor=baseColor,
+                            border_color=borderColor, border_style=line.style_dotted, border_width=1)
+            line lineTop = na
+            line lineBot = na
+            if showOrderBlockLinesInput
+                startX = bar_index + 1
+                endX   = bar_index + 1 + smc_obExtend
+                lineTop := line.new(x1=startX, y1=high, x2=endX, y2=high, xloc=xloc.bar_index,
+                                    color=borderColor, style=obLineStyleEnum, width=obLineWidthInput)
+                lineBot := line.new(x1=startX, y1=open, x2=endX, y2=open, xloc=xloc.bar_index,
+                                    color=borderColor, style=obLineStyleEnum, width=obLineWidthInput)
+            array.unshift(smcOBList, SMC_OrderBlock.new(b, lineTop, lineBot, high, open, BEARISH, false))
+
+smc_updateMitigation() =>
+    if smc_showOrderBlocks and array.size(smcOBList) > 0
+        for i = array.size(smcOBList) - 1 to 0
+            SMC_OrderBlock ob = array.get(smcOBList, i)
+            if ob.mitigated
+                continue
+            bool hit = ob.bias == BULLISH ? low <= ob.top : high >= ob.bot
+            if hit
+                ob.mitigated := true
+                array.set(smcOBList, i, ob)
+
+smc_updateColorsAndStyles() =>
+    if smc_showOrderBlocks
+        int n = array.size(smcOBList)
+        if n > 0
+            for i = 0 to n - 1
+                SMC_OrderBlock eachOb = array.get(smcOBList, i)
+                color baseColor   = eachOb.bias == BULLISH ? internalBullishOrderBlockColor : internalBearishOrderBlockColor
+                color borderColor = color.new(baseColor, obBorderOpacity)
+
+                box.set_bgcolor(eachOb.b, baseColor)
+                box.set_border_color(eachOb.b, borderColor)
+                box.set_border_style(eachOb.b, line.style_dotted)
+                box.set_border_width(eachOb.b, 1)
+
+                if not na(eachOb.lineTop)
+                    line.set_color(eachOb.lineTop, borderColor)
+                    line.set_style(eachOb.lineTop, obLineStyleEnum)
+                    line.set_width(eachOb.lineTop, obLineWidthInput)
+                    if not eachOb.mitigated
+                        line.set_x2(eachOb.lineTop, bar_index + smc_obExtend)
+                if not na(eachOb.lineBot)
+                    line.set_color(eachOb.lineBot, borderColor)
+                    line.set_style(eachOb.lineBot, obLineStyleEnum)
+                    line.set_width(eachOb.lineBot, obLineWidthInput)
+                    if not eachOb.mitigated
+                        line.set_x2(eachOb.lineBot, bar_index + smc_obExtend)
+
+smc_cleanup() =>
+    if smc_showOrderBlocks
+        while array.size(smcOBList) > smc_maxOBs
+            SMC_OrderBlock oldOb = array.pop(smcOBList)
+            box.delete(oldOb.b)
+            if not na(oldOb.lineTop)
+                line.delete(oldOb.lineTop)
+            if not na(oldOb.lineBot)
+                line.delete(oldOb.lineBot)
+
+// ====================================================================
+// INITIALIZATION
+// ====================================================================
+if barstate.isfirst
+    if showSwingOrderBlocksInput
+        for index = 1 to swingOrderBlocksSizeInput
+            array.push(swingOrderBlocksBoxes, box.new(na, na, na, na, xloc=xloc.bar_time, extend=extend.none))
+    if showInternalOrderBlocksInput
+        for index = 1 to internalOrderBlocksSizeInput
+            array.push(internalOrderBlocksBoxes, box.new(na, na, na, na, xloc=xloc.bar_time, extend=extend.none))
+
+// Volatility measures for Smart Money Concepts
+float cumulativeMeanRange = ta.cum(ta.tr) / (bar_index + 1.0)
+volatilityMeasure = orderBlockFilterInput == ATR ? atrMeasure : cumulativeMeanRange
+highVolatilityBar = (high - low) >= (2 * volatilityMeasure)
+parsedHigh = highVolatilityBar ? low : high
+parsedLow  = highVolatilityBar ? high : low
+
+array.push(parsedHighs, parsedHigh)
+array.push(parsedLows,  parsedLow)
+array.push(times, time)
+
+// ====================================================================
+// FVG CALCULATIONS
+// ====================================================================
+var float t1 = threshold1 * 0.01
+var float t2 = threshold2 * 0.01
+var float t3 = threshold3 * 0.01
+var float minGapSize = syminfo.mintick * minGapTicks
+
+H3 = high[2]
+L3 = low[2]
+H1 = high
+L1 = low
+
+bodyLow  = math.min(open, close)
+bodyHigh = math.max(open, close)
+
+gapUp   = H3 + minGapSize < L1
+gapDown = L3 - minGapSize > H1
+
+bullPct = gapUp   and H3 != 0 ? (L1 - H3) / H3 : 0.0
+bearPct = gapDown and L3 != 0 ? (L3 - H1) / L3 : 0.0
+// ⚡ OPTIMIZATION: Solo se evalúa si hay un gap, ahorra miles de comprobaciones por segundo
+bullTier = 0
+if gapUp
+    bullTier := (showT3 and bullPct > t3) ? 3 : (showT2 and bullPct > t2 and bullPct <= t3) ? 2 : (showT1 and bullPct > t1 and bullPct <= t2) ? 1 : 0
+
+bearTier = 0
+if gapDown
+    bearTier := (showT3 and bearPct > t3) ? 3 : (showT2 and bearPct > t2 and bearPct <= t3) ? 2 : (showT1 and bearPct > t1 and bearPct <= t2) ? 1 : 0
+
+bullTop = (low  != bodyLow  ? low  : bodyLow)
+bullBot = H3
+
+bearTop = L3
+bearBot = (high != bodyHigh ? high : bodyHigh)
+
+var box bullBoxT1 = na
+var box bullBoxT2 = na
+var box bullBoxT3 = na
+var box bearBoxT1 = na
+var box bearBoxT2 = na
+var box bearBoxT3 = na
+
+var box[] bullHistT1 = array.new_box()
+var box[] bullHistT2 = array.new_box()
+var box[] bullHistT3 = array.new_box()
+var box[] bearHistT1 = array.new_box()
+var box[] bearHistT2 = array.new_box()
+var box[] bearHistT3 = array.new_box()
+// Mitigation state per tier (bool[] by-reference). 0=T1 1=T2 2=T3
+var int[] bullMit = array.from(0, 0, 0)
+var int[] bearMit = array.from(0, 0, 0)
+
+if not showT1 and not na(bullBoxT1)
+    box.delete(bullBoxT1)
+    bullBoxT1 := na
+    array.set(bullMit, 0, 0)
+bullBoxT1 := f_persistBox(bullTier == 1, bullBoxT1, bullTop, bullBot, bullColorFVG, bullHistT1, true,  bullMit, 0)
+if not showT2 and not na(bullBoxT2)
+    box.delete(bullBoxT2)
+    bullBoxT2 := na
+    array.set(bullMit, 1, 0)
+bullBoxT2 := f_persistBox(bullTier == 2, bullBoxT2, bullTop, bullBot, bullColorFVG, bullHistT2, true,  bullMit, 1)
+if not showT3 and not na(bullBoxT3)
+    box.delete(bullBoxT3)
+    bullBoxT3 := na
+    array.set(bullMit, 2, 0)
+bullBoxT3 := f_persistBox(bullTier == 3, bullBoxT3, bullTop, bullBot, bullColorFVG, bullHistT3, true,  bullMit, 2)
+
+if not showT1 and not na(bearBoxT1)
+    box.delete(bearBoxT1)
+    bearBoxT1 := na
+    array.set(bearMit, 0, 0)
+bearBoxT1 := f_persistBox(bearTier == 1, bearBoxT1, bearTop, bearBot, bearColorFVG, bearHistT1, false, bearMit, 0)
+if not showT2 and not na(bearBoxT2)
+    box.delete(bearBoxT2)
+    bearBoxT2 := na
+    array.set(bearMit, 1, 0)
+bearBoxT2 := f_persistBox(bearTier == 2, bearBoxT2, bearTop, bearBot, bearColorFVG, bearHistT2, false, bearMit, 1)
+if not showT3 and not na(bearBoxT3)
+    box.delete(bearBoxT3)
+    bearBoxT3 := na
+    array.set(bearMit, 2, 0)
+bearBoxT3 := f_persistBox(bearTier == 3, bearBoxT3, bearTop, bearBot, bearColorFVG, bearHistT3, false, bearMit, 2)
+
+// ====================================================================
+// ICT AMS CALCULATIONS
+// ====================================================================
+
+if queryPatterns(low, low[1], low[2], false)
+    stLow.updatePattern(low[1], bar_index[1])
+
+if queryPatterns(high, high[1], high[2], true)
+    stHigh.updatePattern(high[1], bar_index[1])
+
+stLow.renderStructures(false, stMS, 'ST', stBearMSColor, stMSLineStyleEnum, stMSLineWidth, stBosMS, stChochMS, stShowLabels)
+stHigh.renderStructures(true, stMS, 'ST', stBullMSColor, stMSLineStyleEnum, stMSLineWidth, stBosMS, stChochMS, stShowLabels)
+
+cITL = stLow.queryPatterns(false)
+if cITL and cITL != cITL[1]
+    itLow.updatePattern(stLow.midPrice, stLow.midIndex)
+
+cITH = stHigh.queryPatterns(true)
+if cITH and cITH != cITH[1]
+    itHigh.updatePattern(stHigh.midPrice, stHigh.midIndex)
+
+itLow.renderStructures(false, itMS, 'IT', itBearMSColor, itMSLineStyleEnum, itMSLineWidth, itBosMS, itChochMS, itShowLabels)
+itHigh.renderStructures(true, itMS, 'IT', itBullMSColor, itMSLineStyleEnum, itMSLineWidth, itBosMS, itChochMS, itShowLabels)
+
+cLTL = itLow.queryPatterns(false)
+if cLTL and cLTL != cLTL[1]
+    ltLow.isCrossed := false
+    ltLow.lastPrice := itLow.midPrice
+    ltLow.lastIndex := itLow.midIndex
+
+cLTH = itHigh.queryPatterns(true)
+if cLTH and cLTH != cLTH[1]
+    ltHigh.isCrossed := false
+    ltHigh.lastPrice := itHigh.midPrice
+    ltHigh.lastIndex := itHigh.midIndex
+
+ltLow.renderStructures(false, ltMS, 'LT', ltBearMSColor, ltMSLineStyleEnum, ltMSLineWidth, ltBosMS, ltChochMS, ltShowLabels)
+ltHigh.renderStructures(true, ltMS, 'LT', ltBullMSColor, ltMSLineStyleEnum, ltMSLineWidth, ltBosMS, ltChochMS, ltShowLabels)
+
+// ====================================================================
+// SMART MONEY CONCEPTS CALCULATIONS
+// ====================================================================
+// ⚡ DEEP OPTIMIZATION: Compute `leg(size)` ONCE per timeframe and pass it down
+// This eliminates the creation of multiple concurrent `ta.highest` / `ta.lowest` state machines inside Pine
+int leg50 = leg(50)
+int leg5  = leg(5)
+int legEq = showEqualHighsLowsInput ? leg(equalHighsLowsLengthInput) : 0
+
+getCurrentStructure(50, leg50, false)
+getCurrentStructure(5, leg5, false, true)
+
+if showEqualHighsLowsInput
+    getCurrentStructure(equalHighsLowsLengthInput, legEq, true)
+
+displayStructure(true)
+displayStructure()
+
+if showInternalOrderBlocksInput
+    deleteOrderBlocks(true)
+
+if showSwingOrderBlocksInput
+    deleteOrderBlocks()
+
+// ====================================================================
+// REAL TIME STRUCTURE CALCULATIONS
+// ====================================================================
+
+updateRealTimePivots(5,  leg5,  rtInternalHigh, rtInternalLow, rtInternalTrend)
+updateRealTimePivots(50, leg50, rtSwingHigh,    rtSwingLow,    rtSwingTrend)
+
+displayRealTimeStructure(rtInternalHigh, rtInternalLow, rtInternalTrend, rtInternalBosInput, rtInternalChochInput, rtInternalShowLabelsInput and not (suppressRtLabelsInput and stShowLabels), rtInternalLineStyleEnum, rtInternalLineWidthInput, rtInternalBullColorInput, rtInternalBearColorInput)
+displayRealTimeStructure(rtSwingHigh, rtSwingLow, rtSwingTrend, rtSwingBosInput, rtSwingChochInput, rtSwingShowLabelsInput and not (suppressRtLabelsInput and itShowLabels), rtSwingLineStyleEnum, rtSwingLineWidthInput, rtSwingBullColorInput, rtSwingBearColorInput)
+
+// ████████████████████████████████████████████████████████████████████████████████████████████████████
+// DISPLACEMENT ORDER BLOCKS (SMC) - EJECUCIÓN
+// ████████████████████████████████████████████████████████████████████████████████████████████████████
+if smc_showOrderBlocks
+    smc_createOrderBlocks()
+    smc_updateMitigation()
+    smc_cleanup()
+
+// ====================================================================
+// STOP HUNT — FRACTAL DETECTION (3-bar fractal: 1 bar each side)
+// ====================================================================
+int shN = 1
+float shFractalHigh = ta.pivothigh(high, shN, shN)
+float shFractalLow  = ta.pivotlow(low, shN, shN)
+
+if not na(shFractalHigh)
+    array.unshift(shFracHighLevels, shFractalHigh)
+    array.unshift(shFracHighIndices, bar_index - shN)
+    if array.size(shFracHighLevels) > shMaxStored
+        array.pop(shFracHighLevels)
+        array.pop(shFracHighIndices)
+
+if not na(shFractalLow)
+    array.unshift(shFracLowLevels, shFractalLow)
+    array.unshift(shFracLowIndices, bar_index - shN)
+    if array.size(shFracLowLevels) > shMaxStored
+        array.pop(shFracLowLevels)
+        array.pop(shFracLowIndices)
+
+// ── Broken Fractal Invalidation ──
+if array.size(shFracHighLevels) > 0
+    int shSzH = array.size(shFracHighLevels)
+    for i = shSzH - 1 to 0
+        if close[1] > array.get(shFracHighLevels, i)
+            array.remove(shFracHighLevels, i)
+            array.remove(shFracHighIndices, i)
+
+if array.size(shFracLowLevels) > 0
+    int shSzL = array.size(shFracLowLevels)
+    for i = shSzL - 1 to 0
+        if close[1] < array.get(shFracLowLevels, i)
+            array.remove(shFracLowLevels, i)
+            array.remove(shFracLowIndices, i)
+
+// ── Stop Hunt FVG Detection (for Recent FVG filter) ──
+int shMaxFVGs = 50
+bool shBullFVG = low > high[2] and low > low[1]
+bool shBearFVG = high < low[2] and high < high[1]
+
+if shBullFVG
+    array.unshift(shFvgTopLevels, low)
+    array.unshift(shFvgBottomLevels, high[2])
+    if array.size(shFvgTopLevels) > shMaxFVGs
+        array.pop(shFvgTopLevels)
+        array.pop(shFvgBottomLevels)
+
+if shBearFVG
+    array.unshift(shFvgTopLevels, low[2])
+    array.unshift(shFvgBottomLevels, high)
+    if array.size(shFvgTopLevels) > shMaxFVGs
+        array.pop(shFvgTopLevels)
+        array.pop(shFvgBottomLevels)
+
+shIsInFVG(float priceLevel) =>
+    bool result = false
+    int sz = array.size(shFvgTopLevels)
+    if sz > 0
+        for i = 0 to sz - 1
+            if priceLevel <= array.get(shFvgTopLevels, i) and priceLevel >= array.get(shFvgBottomLevels, i)
+                result := true
+                break
+    result
+
+// ── Stop Hunt Detection ──
+bool shBearishHunt = false
+bool shBullishHunt = false
+
+if array.size(shFracHighLevels) > 0
+    int shCnt = math.min(array.size(shFracHighLevels), shMaxBarsBack)
+    for i = 0 to shCnt - 1
+        float shLevel = array.get(shFracHighLevels, i)
+        int   shIdx   = array.get(shFracHighIndices, i)
+        if shIdx >= bar_index
+            continue
+        if bar_index - shIdx > shMaxBarsBack
+            continue
+        if high > shLevel and close <= shLevel
+            bool shPassFilter = shRecentFVGHunt ? shIsInFVG(shLevel) : true
+            if shPassFilter
+                shBearishHunt := true
+
+                if shShowRaidLines
+                    line.new(shIdx, shLevel, bar_index, shLevel, xloc=xloc.bar_index, color=shHuntLinesColor, style=shLineStyleEnum, width=shLinesWidth)
+                if shShowRaidDots
+                    label.new(bar_index, high + atrMeasure * bullLabelGap, '⚡', xloc.bar_index, yloc.price, color=color(na), textcolor=bearLabelColor, style=label.style_none, size=resolvedShLabelSize)
+                array.remove(shFracHighLevels, i)
+                array.remove(shFracHighIndices, i)
+                break
+
+if array.size(shFracLowLevels) > 0
+    int shCnt = math.min(array.size(shFracLowLevels), shMaxBarsBack)
+    for i = 0 to shCnt - 1
+        float shLevel = array.get(shFracLowLevels, i)
+        int   shIdx   = array.get(shFracLowIndices, i)
+        if shIdx >= bar_index
+            continue
+        if bar_index - shIdx > shMaxBarsBack
+            continue
+        if low < shLevel and close >= shLevel
+            bool shPassFilter = shRecentFVGHunt ? shIsInFVG(shLevel) : true
+            if shPassFilter
+                shBullishHunt := true
+
+                if shShowRaidLines
+                    line.new(shIdx, shLevel, bar_index, shLevel, xloc=xloc.bar_index, color=shHuntLinesColor, style=shLineStyleEnum, width=shLinesWidth)
+                if shShowRaidDots
+                    label.new(bar_index, low - atrMeasure * bearLabelGap, '⚡', xloc.bar_index, yloc.price, color=color(na), textcolor=bullLabelColor, style=label.style_none, size=resolvedShLabelSize)
+                array.remove(shFracLowLevels, i)
+                array.remove(shFracLowIndices, i)
+                break
+
+// ====================================================================
+// DRAW ORDER BLOCKS (TOP LAYER)
+// ====================================================================
+if barstate.islastconfirmedhistory or barstate.islast
+    if showInternalOrderBlocksInput
+        drawOrderBlocks(true)
+    if showSwingOrderBlocksInput
+        drawOrderBlocks()
+
+    if isHistorical
+        if showInternalOrderBlocksInput
+            drawHistoricalOrderBlocks(true)
+        if showSwingOrderBlocksInput
+            drawHistoricalOrderBlocks()
+
+if barstate.islast
+    smc_updateColorsAndStyles()
+
+// (Raid dots are drawn as labels inside the detection loops above)
+
+// ====================================================================
+// ALERTS
+// ====================================================================
+alertcondition(currentAlerts.internalBullishBOS,        'Internal Bullish BOS',         'Internal Bullish BOS formed')
+alertcondition(currentAlerts.internalBullishCHoCH,      'Internal Bullish CHoCH',       'Internal Bullish CHoCH formed')
+alertcondition(currentAlerts.internalBearishBOS,        'Internal Bearish BOS',         'Internal Bearish BOS formed')
+alertcondition(currentAlerts.internalBearishCHoCH,      'Internal Bearish CHoCH',       'Internal Bearish CHoCH formed')
+
+alertcondition(currentAlerts.swingBullishBOS,           'Bullish BOS',                  'Bullish BOS formed')
+alertcondition(currentAlerts.swingBullishCHoCH,         'Bullish CHoCH',                'Bullish CHoCH formed')
+alertcondition(currentAlerts.swingBearishBOS,           'Bearish BOS',                  'Bearish BOS formed')
+alertcondition(currentAlerts.swingBearishCHoCH,         'Bearish CHoCH',                'Bearish CHoCH formed')
+
+alertcondition(currentAlerts.internalBullishOrderBlock, 'Bullish Internal OB Breakout', 'Price broke bullish internal OB')
+alertcondition(currentAlerts.internalBearishOrderBlock, 'Bearish Internal OB Breakout', 'Price broke bearish internal OB')
+alertcondition(currentAlerts.swingBullishOrderBlock,    'Bullish Swing OB Breakout',    'Price broke bullish swing OB')
+alertcondition(currentAlerts.swingBearishOrderBlock,    'Bearish Swing OB Breakout',    'Price broke bearish swing OB')
+
+alertcondition(currentAlerts.equalHighs,                'Equal Highs',                  'Equal highs detected')
+alertcondition(currentAlerts.equalLows,                 'Equal Lows',                   'Equal lows detected')
+
+alertcondition(shBearishHunt,                           'Bearish Stop Hunt',            'Bearish stop hunt detected')
+alertcondition(shBullishHunt,                           'Bullish Stop Hunt',            'Bullish stop hunt detected')
+alertcondition(shBearishHunt or shBullishHunt,          'Any Stop Hunt',                'Stop hunt detected')

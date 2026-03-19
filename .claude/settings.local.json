@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm update:*)",
+      "Bash(claude:*)",
+      "mcp__notebooklm__notebook_list",
+      "WebFetch(domain:chatgpt.com)"
+    ]
+  }
+}
