@@ -15,7 +15,7 @@ ES/NQ intraday scalper building one robust, automatable 1-minute trading system.
 01_Trading_Profile_and_Objectives/   ✅ COMPLETE - identity, goals, risk philosophy
 02_Paid_Courses_Actionable_Extraction/ ⬜ EMPTY - waiting for first course
 03_External_Strategy_Research/         ⬜ EMPTY - waiting for research
-04_Current_System_and_Indicators/      🔶 40% - system map partial, inventory empty
+04_Current_System_and_Indicators/      🔶 70% - inventory done, system map sections 4-10 need user input
 05_Synthesis_and_Candidate_Systems/    ⬜ EMPTY - waiting for synthesis phase
 06_Backtesting_and_Validation/         ⬜ EMPTY - waiting for testing phase
 07_AI_Skills_and_Agents/               ✅ COMPLETE - 3 Pine roles + 2 prompt packs
@@ -64,7 +64,72 @@ ES/NQ intraday scalper building one robust, automatable 1-minute trading system.
 9. Backtest and forward-validate
 10. Promote only the most robust version
 
+## Claude Code Skills (.claude/skills/)
+
+### Trading Workflow Skills (8)
+
+| Skill | Purpose |
+| --- | --- |
+| `/extract-course` | Process paid courses into structured rules |
+| `/extract-strategy` | Normalize external strategies |
+| `/audit-indicators` | Indicator overlap and gap analysis |
+| `/score-candidate` | Evaluate candidate systems against scorecard |
+| `/pine-architect` | Build/debug/migrate Pine Script v6 |
+| `/pine-optimize` | Optimize Pine performance |
+| `/sync-notebooklm` | Upload docs to NotebookLM |
+| `/log-change` | Record system changes + git commit |
+
+### Meta-Capability Skills (4)
+
+| Skill | Purpose |
+| --- | --- |
+| `/create` | Create new skills or agents for this project |
+| `/research` | Deep research grounded in trader profile |
+| `/swarm` | Decompose complex tasks into parallel subagents |
+| `/system-design` | Design trading pipelines and automation architecture |
+
+### Superpowers — Adapted Discipline Skills (5)
+
+Project-level overrides of the global superpowers plugin, adapted for Pine Script and trading:
+
+| Skill | Purpose |
+| --- | --- |
+| `/brainstorming` | Design before implementation — explore intent, assess fit, propose approaches |
+| `/writing-plans` | Detailed bite-sized implementation plans for Pine Script work |
+| `/test-driven-development` | Spec-Driven Development for Pine Script (spec → implement → verify on chart) |
+| `/systematic-debugging` | Root cause investigation for Pine Script bugs, repaint, signal errors |
+| `/verification-before-completion` | Non-repainting checklist, signal timing, resource usage verification |
+
+### Superpowers — Used As-Is from Global Plugin (9)
+
+These work without trading-specific adaptation:
+
+- `superpowers:dispatching-parallel-agents` — parallelize independent tasks
+- `superpowers:subagent-driven-development` — fresh subagent per task + review
+- `superpowers:executing-plans` — execute plans in separate sessions
+- `superpowers:finishing-a-development-branch` — merge/PR completed work
+- `superpowers:using-git-worktrees` — isolated workspaces
+- `superpowers:requesting-code-review` — dispatch code reviewer
+- `superpowers:receiving-code-review` — evaluate feedback technically
+- `superpowers:writing-skills` — create new skills with TDD discipline
+- `superpowers:using-superpowers` — skill invocation rules
+
+### Workflow Chains
+
+**Building a new indicator:**
+
+`/brainstorming` → `/writing-plans` → `/test-driven-development` → `/pine-architect` → `/verification-before-completion` → `/log-change`
+
+**Debugging an indicator:**
+`/systematic-debugging` → `/test-driven-development` (define correct behavior) → fix → `/verification-before-completion` → `/log-change`
+
+**Processing new knowledge:**
+`/extract-course` or `/extract-strategy` → `/sync-notebooklm` → `/score-candidate`
+
+**Designing system changes:**
+`/brainstorming` → `/system-design` → `/writing-plans` → implement → `/verification-before-completion`
+
 ## NotebookLM Integration
 
 MCP server configured. Notebook: "Trading System - NotebookLM" (id: `ef97cc40-896f-4d2d-b7b8-6dea75274e69`).
-Use `/sync-notebooklm` skill to upload/update sources.
+7 foundation sources loaded. Use `/sync-notebooklm` skill to upload/update sources.
