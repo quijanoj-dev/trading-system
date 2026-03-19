@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Environment
+.env
+.env.local
+
+# Legacy indicator versions (pre-git historical record, frozen)
+08_TradingView_Indicators/Legacy Versions/
+
+# Claude Code session data
+.claude/*.jsonl
