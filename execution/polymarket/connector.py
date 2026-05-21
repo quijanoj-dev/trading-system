@@ -87,7 +87,8 @@ class PolymarketConnector:
             raise ImportError("pip install poly-clob-client")
 
         client = self._client or ClobClient(host="https://clob.polymarket.com", chain_id=137)
-        raw_markets = client.get_markets()
+        response = client.get_markets()
+        raw_markets = response.get("data", []) if isinstance(response, dict) else response
 
         results = []
         for m in raw_markets:
