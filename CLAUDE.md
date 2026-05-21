@@ -9,6 +9,12 @@ ES/NQ intraday scalper building one robust, automatable 1-minute trading system.
 - **Platform Stack:** TradingView (charting) → NinjaTrader (execution) → TradeZella (journal) → Apex Trader Funding (prop firm)
 - **Goal:** Pass funding evals consistently, reduce discretion, build toward automation
 
+## Control Plane
+
+- This root file stays focused on repo mission, domain context, and trading-system reference material.
+- Project-local agent behavior, overlay settings, eval gates, and project memory now live under `.claude/`.
+- Use `.claude/CLAUDE.md` for operational behavior and `.claude/overlay.manifest.json` for the active overlay contract.
+
 ## Knowledge Vault
 
 Persistent knowledge base at `~/Developer-Vault/` (Obsidian vault). All folders are **shared across projects** — use tags to associate notes with this project.

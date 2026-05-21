@@ -1,8 +1,17 @@
 {
   "mcpServers": {
     "notebooklm": {
-      "command": "/Users/apple/.local/bin/notebooklm-mcp",
-      "args": []
+      "args": [],
+      "command": "/Users/apple/.local/bin/notebooklm-mcp"
+    },
+    "obsidian": {
+      "args": [
+        "mcp-remote",
+        "http://localhost:22360/sse"
+      ],
+      "command": "npx",
+      "env": {},
+      "type": "stdio"
     }
   }
 }
