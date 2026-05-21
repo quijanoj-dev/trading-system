@@ -1,0 +1,94 @@
+{
+  "adaptation_ledger": ".claude/adaptations/ledger.json",
+  "benchmark_suite": "research-workspace",
+  "enabled_assets": [
+    "skill:documentation",
+    "skill:improvement-loop",
+    "agent:doc-updater",
+    "agent:planner",
+    "command:review",
+    "hook:pre-commit-secrets.sh",
+    "mcp-config:obsidian",
+    "skill:research",
+    "skill:notebooklm",
+    "skill:system-design",
+    "agent:architect",
+    "framework:cognitive-os"
+  ],
+  "hook_activation": {
+    "activated_hooks": [
+      ".claude/hooks/pre-commit-secrets.sh"
+    ],
+    "collisions": [],
+    "git_hooks_dir_exists": true,
+    "pending_activation": [],
+    "project_hooks": [
+      ".claude/hooks/pre-commit-secrets.sh"
+    ],
+    "status": "active"
+  },
+  "incident_dir": ".claude/incidents/",
+  "key_commands": [
+    "git status --short"
+  ],
+  "knowledge_bindings": {
+    "benchmark_suite": "research-workspace",
+    "engram": {
+      "role": "working-memory",
+      "status": "active"
+    },
+    "notebooklm": {
+      "registration_template": "integrations/notebooklm/source-registration-template.md",
+      "role": "project-brain",
+      "status": "tracked"
+    },
+    "obsidian": {
+      "promotion_policy": "integrations/obsidian/promotion-rules.md",
+      "role": "strategic-memory",
+      "status": "promotion-only"
+    },
+    "project_memory": ".claude/memory/",
+    "project_root": "/Users/apple/Library/CloudStorage/Dropbox/PC JuanK/Work/AI Projects/Trading System"
+  },
+  "learning_mode": "human-gated-eval",
+  "preserved_local_assets": [],
+  "propagation_policy": {
+    "default": "canary",
+    "freeze_on_incident": true,
+    "major": "manual-approval-only",
+    "minor": "canary",
+    "patch": "immediate",
+    "review_on_conflict": true
+  },
+  "repo_mission": "ES/NQ intraday scalper building one robust, automatable 1-minute trading system.",
+  "review_inbox_ref": ".claude/review/inbox.json",
+  "runtime_scaffolds": [
+    ".claude/primer.md",
+    ".claude/context/project-brief.md",
+    ".claude/context/constraints.md",
+    ".claude/context/objectives.md",
+    ".claude/handoff/current-state.md",
+    ".claude/handoff/next-steps.md",
+    ".claude/handoff/open-risks.md",
+    ".claude/learning/README.md",
+    ".claude/learning/observations/",
+    ".claude/learning/proposals/",
+    ".claude/learning/promotions/",
+    ".claude/memory/decisions.md",
+    ".claude/memory/retrospective.md"
+  ],
+  "runtime_status": "healthy",
+  "runtime_surfaces": {
+    "context_present": true,
+    "handoff_present": true,
+    "learning_scaffold_present": true,
+    "memory_starters_present": true,
+    "primer_present": true,
+    "project_manifest_present": true,
+    "stack_present": true
+  },
+  "security_boundaries": [
+    "Never hardcode secrets or write credentials into repo-tracked files.",
+    "Durable rule/skill/memory promotions require human review after evals pass."
+  ]
+}

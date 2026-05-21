@@ -1,0 +1,456 @@
+{
+  "adaptation_ledger": ".claude/adaptations/ledger.json",
+  "adapted_components": [
+    "agent:architect",
+    "agent:doc-updater",
+    "agent:planner",
+    "command:review",
+    "framework:cognitive-os/cos-boot",
+    "framework:cognitive-os/cos-boris",
+    "framework:cognitive-os/cos-decide",
+    "framework:cognitive-os/cos-insight",
+    "framework:cognitive-os/decisions.md",
+    "framework:cognitive-os/insight.md",
+    "framework:cognitive-os/kernel.md",
+    "framework:cognitive-os/protocols/anti-drift.md",
+    "framework:cognitive-os/protocols/boot.md",
+    "framework:cognitive-os/protocols/boris.md",
+    "hook:pre-commit-secrets.sh",
+    "mcp-config:obsidian",
+    "runtime:project-manifest",
+    "runtime:stack",
+    "skill:documentation",
+    "skill:improvement-loop",
+    "skill:notebooklm",
+    "skill:research",
+    "skill:system-design"
+  ],
+  "benchmark_suite": "research-workspace",
+  "catalog_version": "7.0.0",
+  "files": [
+    ".claude/.local-overrides.md",
+    ".claude/.provision-manifest.json",
+    ".claude/CLAUDE.md",
+    ".claude/adaptations/ledger.json",
+    ".claude/adaptations/overlays/README.md",
+    ".claude/agents/architect/architect.md",
+    ".claude/agents/doc-updater/doc-updater.md",
+    ".claude/agents/planner/planner.md",
+    ".claude/cognitive-os/decisions.md",
+    ".claude/cognitive-os/insight.md",
+    ".claude/cognitive-os/kernel.md",
+    ".claude/cognitive-os/protocols/anti-drift.md",
+    ".claude/cognitive-os/protocols/boris.md",
+    ".claude/commands/review.md",
+    ".claude/context/constraints.md",
+    ".claude/context/objectives.md",
+    ".claude/context/project-brief.md",
+    ".claude/evals/README.md",
+    ".claude/evals/suites/project-overlay-regression.json",
+    ".claude/handoff/current-state.md",
+    ".claude/handoff/next-steps.md",
+    ".claude/handoff/open-risks.md",
+    ".claude/hooks/pre-commit-secrets.sh",
+    ".claude/incidents/README.md",
+    ".claude/learning/README.md",
+    ".claude/learning/observations/",
+    ".claude/learning/promotions/",
+    ".claude/learning/proposals/",
+    ".claude/memory/README.md",
+    ".claude/memory/decisions.md",
+    ".claude/memory/promotion-policy.md",
+    ".claude/memory/record.schema.json",
+    ".claude/memory/retrospective.md",
+    ".claude/overlay.manifest.json",
+    ".claude/primer.md",
+    ".claude/project-manifest.yaml",
+    ".claude/reports/status.json",
+    ".claude/review/inbox.json",
+    ".claude/rollout/policy.json",
+    ".claude/settings.json",
+    ".claude/skills/cos-boot/SKILL.md",
+    ".claude/skills/cos-boris/SKILL.md",
+    ".claude/skills/cos-decide/SKILL.md",
+    ".claude/skills/cos-insight/SKILL.md",
+    ".claude/skills/documentation/SKILL.md",
+    ".claude/skills/improvement-loop/SKILL.md",
+    ".claude/skills/notebooklm/SKILL.md",
+    ".claude/skills/research/SKILL.md",
+    ".claude/skills/system-design/SKILL.md",
+    ".claude/stack.yaml"
+  ],
+  "framework_records": [
+    {
+      "projected_components": [
+        {
+          "adaptation_mode": "copy-if-clean",
+          "custom_replacements": {
+            "YYYY-MM-DD": "2026-03-27",
+            "[NAME]": "Trading System copilot",
+            "[RELATIONSHIP]": "teammate",
+            "[ROLE]": "research-workspace engineering copilot"
+          },
+          "destination": ".claude/cognitive-os/kernel.md",
+          "kind": "framework",
+          "provenance_id": "framework:cognitive-os/kernel.md",
+          "render_strategy": "file-copy",
+          "source_rel_path": "vendor/cognitive-os/templates/kernel.template.md",
+          "update_strategy": "manual-review"
+        },
+        {
+          "adaptation_mode": "copy-if-clean",
+          "custom_replacements": {
+            "YYYY-MM-DD": "2026-03-27",
+            "[NAME]": "Trading System copilot",
+            "[RELATIONSHIP]": "teammate",
+            "[ROLE]": "research-workspace engineering copilot"
+          },
+          "destination": ".claude/cognitive-os/decisions.md",
+          "kind": "framework",
+          "provenance_id": "framework:cognitive-os/decisions.md",
+          "render_strategy": "file-copy",
+          "source_rel_path": "vendor/cognitive-os/templates/decisions.template.md",
+          "update_strategy": "manual-review"
+        },
+        {
+          "adaptation_mode": "copy-if-clean",
+          "custom_replacements": {
+            "YYYY-MM-DD": "2026-03-27",
+            "[NAME]": "Trading System copilot",
+            "[RELATIONSHIP]": "teammate",
+            "[ROLE]": "research-workspace engineering copilot"
+          },
+          "destination": ".claude/cognitive-os/insight.md",
+          "kind": "framework",
+          "provenance_id": "framework:cognitive-os/insight.md",
+          "render_strategy": "file-copy",
+          "source_rel_path": "vendor/cognitive-os/templates/insight.template.md",
+          "update_strategy": "manual-review"
+        },
+        {
+          "adaptation_mode": "copy-if-clean",
+          "custom_replacements": {
+            "YYYY-MM-DD": "2026-03-27",
+            "[NAME]": "Trading System copilot",
+            "[RELATIONSHIP]": "teammate",
+            "[ROLE]": "research-workspace engineering copilot"
+          },
+          "destination": ".claude/cognitive-os/protocols/anti-drift.md",
+          "kind": "framework",
+          "provenance_id": "framework:cognitive-os/protocols/anti-drift.md",
+          "render_strategy": "file-copy",
+          "source_rel_path": "vendor/cognitive-os/templates/protocols/anti-drift.md",
+          "update_strategy": "manual-review"
+        },
+        {
+          "adaptation_mode": "copy-if-clean",
+          "custom_replacements": {
+            "YYYY-MM-DD": "2026-03-27",
+            "[NAME]": "Trading System copilot",
+            "[RELATIONSHIP]": "teammate",
+            "[ROLE]": "research-workspace engineering copilot"
+          },
+          "destination": ".claude/cognitive-os/protocols/boris.md",
+          "kind": "framework",
+          "provenance_id": "framework:cognitive-os/protocols/boris.md",
+          "render_strategy": "file-copy",
+          "source_rel_path": "vendor/cognitive-os/templates/protocols/boris.md",
+          "update_strategy": "manual-review"
+        },
+        {
+          "adaptation_mode": "copy-if-clean",
+          "custom_replacements": {
+            "YYYY-MM-DD": "2026-03-27",
+            "[NAME]": "Trading System copilot",
+            "[RELATIONSHIP]": "teammate",
+            "[ROLE]": "research-workspace engineering copilot"
+          },
+          "destination": ".claude/cognitive-os/protocols/boot.md",
+          "kind": "framework",
+          "provenance_id": "framework:cognitive-os/protocols/boot.md",
+          "render_strategy": "file-copy",
+          "source_rel_path": "vendor/cognitive-os/templates/protocols/boot.md",
+          "update_strategy": "manual-review"
+        },
+        {
+          "adaptation_mode": "merge-with-markers",
+          "alias_name": null,
+          "destination": ".claude/skills/cos-boot/SKILL.md",
+          "kind": "skill",
+          "provenance_id": "framework:cognitive-os/cos-boot",
+          "render_strategy": "managed-markers",
+          "replacements": {},
+          "source_rel_path": "vendor/cognitive-os/drivers/claude-code/cos-boot/SKILL.md",
+          "update_strategy": "merge"
+        },
+        {
+          "adaptation_mode": "merge-with-markers",
+          "alias_name": null,
+          "destination": ".claude/skills/cos-boris/SKILL.md",
+          "kind": "skill",
+          "provenance_id": "framework:cognitive-os/cos-boris",
+          "render_strategy": "managed-markers",
+          "replacements": {},
+          "source_rel_path": "vendor/cognitive-os/drivers/claude-code/cos-boris/SKILL.md",
+          "update_strategy": "merge"
+        },
+        {
+          "adaptation_mode": "merge-with-markers",
+          "alias_name": null,
+          "destination": ".claude/skills/cos-decide/SKILL.md",
+          "kind": "skill",
+          "provenance_id": "framework:cognitive-os/cos-decide",
+          "render_strategy": "managed-markers",
+          "replacements": {},
+          "source_rel_path": "vendor/cognitive-os/drivers/claude-code/cos-decide/SKILL.md",
+          "update_strategy": "merge"
+        },
+        {
+          "adaptation_mode": "merge-with-markers",
+          "alias_name": null,
+          "destination": ".claude/skills/cos-insight/SKILL.md",
+          "kind": "skill",
+          "provenance_id": "framework:cognitive-os/cos-insight",
+          "render_strategy": "managed-markers",
+          "replacements": {},
+          "source_rel_path": "vendor/cognitive-os/drivers/claude-code/cos-insight/SKILL.md",
+          "update_strategy": "merge"
+        }
+      ],
+      "projected_files": [
+        ".claude/cognitive-os/decisions.md",
+        ".claude/cognitive-os/insight.md",
+        ".claude/cognitive-os/kernel.md",
+        ".claude/cognitive-os/protocols/anti-drift.md",
+        ".claude/cognitive-os/protocols/boot.md",
+        ".claude/cognitive-os/protocols/boris.md",
+        ".claude/skills/cos-boot/SKILL.md",
+        ".claude/skills/cos-boris/SKILL.md",
+        ".claude/skills/cos-decide/SKILL.md",
+        ".claude/skills/cos-insight/SKILL.md"
+      ],
+      "provenance_id": "framework:cognitive-os",
+      "selected_reason": "domain-profile:trading-system"
+    }
+  ],
+  "generated_at": "2026-03-28T01:58:35Z",
+  "hook_activation": {
+    "activated_hooks": [
+      ".claude/hooks/pre-commit-secrets.sh"
+    ],
+    "collisions": [],
+    "git_hooks_dir_exists": true,
+    "pending_activation": [],
+    "project_hooks": [
+      ".claude/hooks/pre-commit-secrets.sh"
+    ],
+    "status": "active"
+  },
+  "knowledge_bindings": {
+    "benchmark_suite": "research-workspace",
+    "engram": {
+      "role": "working-memory",
+      "status": "active"
+    },
+    "notebooklm": {
+      "registration_template": "integrations/notebooklm/source-registration-template.md",
+      "role": "project-brain",
+      "status": "tracked"
+    },
+    "obsidian": {
+      "promotion_policy": "integrations/obsidian/promotion-rules.md",
+      "role": "strategic-memory",
+      "status": "promotion-only"
+    },
+    "project_memory": ".claude/memory/",
+    "project_root": "/Users/apple/Library/CloudStorage/Dropbox/PC JuanK/Work/AI Projects/Trading System"
+  },
+  "local_overrides": [
+    ".claude/.local-overrides.md"
+  ],
+  "preserved_local_assets": [],
+  "project_profile": {
+    "archetype": {
+      "benchmark_suite": "research-workspace",
+      "confidence": 0.99,
+      "project_type": "research-workspace",
+      "reasons": [
+        "project detection already classified the repo as research-workspace",
+        "trading signal detected",
+        "documentation-heavy workspace",
+        "Pine Script language detected"
+      ]
+    },
+    "autonomy": "high",
+    "benchmark_suite": "research-workspace",
+    "domains": [
+      "trading-system"
+    ],
+    "learning_mode": "human-gated-eval",
+    "memory": "medium",
+    "overlay_contract": {
+      "evals": "generated",
+      "manifest": "overlay.manifest.json",
+      "memory": "generated",
+      "settings": "generated"
+    },
+    "project_name": "Trading System",
+    "project_type": "research-workspace",
+    "repo_maturity": "medium",
+    "security": "auto",
+    "workflow_intensity": "medium"
+  },
+  "project_root": "/Users/apple/Library/CloudStorage/Dropbox/PC JuanK/Work/AI Projects/Trading System",
+  "propagation_policy": {
+    "default": "canary",
+    "freeze_on_incident": true,
+    "major": "manual-approval-only",
+    "minor": "canary",
+    "patch": "immediate",
+    "review_on_conflict": true
+  },
+  "rollout_policy": {
+    "default": "canary",
+    "freeze_on_incident": true,
+    "major": "manual-approval-only",
+    "minor": "canary",
+    "patch": "immediate",
+    "review_on_conflict": true
+  },
+  "runtime_scaffolds": [
+    ".claude/primer.md",
+    ".claude/context/project-brief.md",
+    ".claude/context/constraints.md",
+    ".claude/context/objectives.md",
+    ".claude/handoff/current-state.md",
+    ".claude/handoff/next-steps.md",
+    ".claude/handoff/open-risks.md",
+    ".claude/learning/README.md",
+    ".claude/learning/observations/",
+    ".claude/learning/proposals/",
+    ".claude/learning/promotions/",
+    ".claude/memory/decisions.md",
+    ".claude/memory/retrospective.md"
+  ],
+  "runtime_status": "healthy",
+  "runtime_surfaces": {
+    "context_present": true,
+    "handoff_present": true,
+    "learning_scaffold_present": true,
+    "memory_starters_present": true,
+    "primer_present": true,
+    "project_manifest_present": true,
+    "stack_present": true
+  },
+  "schema_version": "1.0.0",
+  "selected_assets": [
+    {
+      "adaptation_mode": "merge-with-markers",
+      "destination": ".claude/skills/documentation/SKILL.md",
+      "kind": "skill",
+      "provenance_id": "skill:documentation",
+      "selected_reason": "base-profile:research-workspace",
+      "source_path": "skills/documentation/SKILL.md",
+      "update_strategy": "merge"
+    },
+    {
+      "adaptation_mode": "merge-with-markers",
+      "destination": ".claude/skills/improvement-loop/SKILL.md",
+      "kind": "skill",
+      "provenance_id": "skill:improvement-loop",
+      "selected_reason": "base-profile:research-workspace",
+      "source_path": "skills/improvement-loop/SKILL.md",
+      "update_strategy": "merge"
+    },
+    {
+      "adaptation_mode": "merge-with-markers",
+      "destination": ".claude/agents/doc-updater/doc-updater.md",
+      "kind": "agent",
+      "provenance_id": "agent:doc-updater",
+      "selected_reason": "base-profile:research-workspace",
+      "source_path": "agents/doc-updater/doc-updater.md",
+      "update_strategy": "merge"
+    },
+    {
+      "adaptation_mode": "merge-with-markers",
+      "destination": ".claude/agents/planner/planner.md",
+      "kind": "agent",
+      "provenance_id": "agent:planner",
+      "selected_reason": "base-profile:research-workspace",
+      "source_path": "agents/planner/planner.md",
+      "update_strategy": "merge"
+    },
+    {
+      "adaptation_mode": "merge-with-markers",
+      "destination": ".claude/commands/review.md",
+      "kind": "command",
+      "provenance_id": "command:review",
+      "selected_reason": "base-profile:research-workspace",
+      "source_path": "commands/review.md",
+      "update_strategy": "merge"
+    },
+    {
+      "adaptation_mode": "compose",
+      "destination": ".claude/hooks/pre-commit-secrets.sh",
+      "kind": "hook",
+      "provenance_id": "hook:pre-commit-secrets.sh",
+      "selected_reason": "base-profile:research-workspace",
+      "source_path": "hooks/pre-commit-secrets.sh",
+      "update_strategy": "replace"
+    },
+    {
+      "adaptation_mode": "compose",
+      "destination": ".claude/settings.json",
+      "kind": "mcp-config",
+      "provenance_id": "mcp-config:obsidian",
+      "selected_reason": "base-profile:research-workspace",
+      "source_path": "mcp-configs/mcp-templates.json#obsidian",
+      "update_strategy": "replace"
+    },
+    {
+      "adaptation_mode": "merge-with-markers",
+      "destination": ".claude/skills/research/SKILL.md",
+      "kind": "skill",
+      "provenance_id": "skill:research",
+      "selected_reason": "domain-profile:trading-system",
+      "source_path": "skills/research/SKILL.md",
+      "update_strategy": "merge"
+    },
+    {
+      "adaptation_mode": "merge-with-markers",
+      "destination": ".claude/skills/notebooklm/SKILL.md",
+      "kind": "skill",
+      "provenance_id": "skill:notebooklm",
+      "selected_reason": "domain-profile:trading-system",
+      "source_path": "skills/notebooklm/SKILL.md",
+      "update_strategy": "merge"
+    },
+    {
+      "adaptation_mode": "merge-with-markers",
+      "destination": ".claude/skills/system-design/SKILL.md",
+      "kind": "skill",
+      "provenance_id": "skill:system-design",
+      "selected_reason": "domain-profile:trading-system",
+      "source_path": "skills/system-design/SKILL.md",
+      "update_strategy": "merge"
+    },
+    {
+      "adaptation_mode": "merge-with-markers",
+      "destination": ".claude/agents/architect/architect.md",
+      "kind": "agent",
+      "provenance_id": "agent:architect",
+      "selected_reason": "domain-profile:trading-system",
+      "source_path": "agents/architect/architect.md",
+      "update_strategy": "merge"
+    },
+    {
+      "adaptation_mode": "compose",
+      "destination": ".claude/cognitive-os/",
+      "kind": "framework",
+      "provenance_id": "framework:cognitive-os",
+      "selected_reason": "domain-profile:trading-system",
+      "source_path": "vendor/cognitive-os",
+      "update_strategy": "manual-review"
+    }
+  ]
+}

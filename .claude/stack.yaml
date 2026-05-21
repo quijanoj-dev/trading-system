@@ -1,0 +1,16 @@
+runtime:
+  primary: "TradingView"
+  version: ""
+
+tools:
+  test_runner: ""
+  linter: ""
+  formatter: ""
+  package_manager: ""
+  build_tool: ""
+
+infrastructure:
+  ci_cd: ""
+  database: ""
+  deployment: ""
+  containerization: ""

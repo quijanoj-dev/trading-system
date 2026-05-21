@@ -1,0 +1,28 @@
+project:
+  name: "Trading System"
+  type: "research-workspace"
+  domain: "trading-system"
+  risk_level: medium
+  delivery_mode: iterative
+
+stack:
+  primary_runtime: "TradingView"
+  secondary_tools: []
+
+knowledge:
+  notebooklm_enabled: false
+  obsidian_enabled: false
+  docker_hindsight_enabled: false
+
+capabilities:
+  agents: []
+  skills: []
+  hooks: []
+  mcp: []
+  plugins: []
+
+policies:
+  allow_experimental: false
+  allow_auto_promotion: false
+  require_eval_for_skill_update: true
+  require_hindsight_replay: true

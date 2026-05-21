@@ -10,3 +10,25 @@
 
 # Claude Code session data
 .claude/*.jsonl
+
+# Python bytecode
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Claude Code runtime state (session-specific, not version-controlled)
+.claude/memory/
+.claude/primer.md
+.claude/learning/
+.claude/incidents/
+.claude/adaptations/
+.claude/context/
+.claude/handoff/
+.claude/review/
+.claude/rollout/
+.claude/reports/
+.claude/evals/
+
+# Project-OS overlay (auto-generated, lives in ~/.project-os)
+.project-os/
+.claude/.local-overrides.md
