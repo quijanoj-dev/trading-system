@@ -9,6 +9,39 @@ ES/NQ intraday scalper building one robust, automatable 1-minute trading system.
 - **Platform Stack:** TradingView (charting) → NinjaTrader (execution) → TradeZella (journal) → Apex Trader Funding (prop firm)
 - **Goal:** Pass funding evals consistently, reduce discretion, build toward automation
 
+## Knowledge Vault
+
+Persistent knowledge base at `~/Developer-Vault/` (Obsidian vault). All folders are **shared across projects** — use tags to associate notes with this project.
+
+- **Research:** `~/Developer-Vault/03-research/processed/` — tagged with `project/trading-system`
+- **Session logs:** `~/Developer-Vault/02-development/session-logs/` — auto-captured
+- **Patterns:** `~/Developer-Vault/02-development/patterns/` — reusable coding patterns
+- **Decisions:** `~/Developer-Vault/05-decisions/` — tagged with `project/trading-system`
+- **Resources:** `~/Developer-Vault/04-resources/` — shared reference material
+- **This project in Obsidian:** `~/Developer-Vault/01-projects/Trading-System/` (symlinked)
+
+### Vault Tagging Convention
+
+When saving notes to the vault, always include frontmatter:
+
+```yaml
+---
+title: Descriptive Title
+date: YYYY-MM-DD
+tags: [project/trading-system, topic/relevant-topic, type/note-type]
+project: trading-system
+status: active
+---
+```
+
+- **Project tags:** `project/trading-system` (always include for this project)
+- **Topic tags:** `topic/pine-script`, `topic/divergence`, `topic/risk-management`, `topic/smt`, `topic/backtesting`, etc.
+- **Type tags:** `type/research`, `type/decision`, `type/pattern`, `type/session-log`, `type/bug-fix`
+- **Use `[[wikilinks]]`** to connect related notes across projects
+
+Before starting new work, search the vault for existing notes with matching `topic/` tags.
+Save findings and decisions back to the vault so future sessions (in any project) can find them.
+
 ## Architecture
 
 ```
@@ -133,3 +166,25 @@ These work without trading-specific adaptation:
 
 MCP server configured. Notebook: "Trading System - NotebookLM" (id: `ef97cc40-896f-4d2d-b7b8-6dea75274e69`).
 7 foundation sources loaded. Use `/sync-notebooklm` skill to upload/update sources.
+
+### NotebookLM ↔ Obsidian Bridge
+
+When pulling insights from NotebookLM, always save a markdown summary to the vault:
+- Research summaries → `~/Developer-Vault/03-research/processed/`
+- Strategy extractions → `~/Developer-Vault/03-research/processed/`
+- Always include frontmatter with tags:
+  ```yaml
+  ---
+  title: Research Summary Title
+  date: YYYY-MM-DD
+  tags: [project/trading-system, topic/relevant-topic, type/research]
+  project: trading-system
+  source: NotebookLM
+  status: active
+  ---
+  ```
+- Add `[[wikilinks]]` to related vault notes
+
+When starting new research, check `~/Developer-Vault/03-research/` for existing work first.
+Search by `topic/` tags to find relevant notes from any project.
+Do not duplicate research that has already been processed and saved to the vault.

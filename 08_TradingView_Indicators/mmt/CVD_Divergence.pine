@@ -1,0 +1,64 @@
+//@version=6
+// CVD Divergence — Cumulative Volume Delta with price divergence detection
+// Shows delta (buying vs selling volume) and flags divergences.
+// Note: Accurate CVD requires tick-by-tick data. This approximation uses
+//       intrabar direction based on close position relative to H/L range.
+indicator("CVD Divergence", overlay=false, format=format.volume)
+
+// ─── INPUTS ───────────────────────────────────────────────────────────────────
+smooth_len    = input.int(3,    "CVD Smoothing", minval=1, maxval=20)
+div_lookback  = input.int(14,   "Divergence Lookback", minval=5, maxval=50)
+show_hist     = input.bool(true, "Show Delta Histogram")
+alert_div     = input.bool(true, "Alert on Divergence")
+
+// ─── DELTA APPROXIMATION ──────────────────────────────────────────────────────
+// Estimate buying vs selling volume from close position in the candle range.
+// close at top → all buying. close at bottom → all selling.
+body_range = high - low
+close_pos  = body_range == 0 ? 0.5 : (close - low) / body_range
+
+buy_vol  = close_pos * volume
+sell_vol = (1 - close_pos) * volume
+delta    = buy_vol - sell_vol   // positive = more buying
+
+// ─── CUMULATIVE DELTA ─────────────────────────────────────────────────────────
+var float cvd = 0.0
+cvd += delta
+cvd_smooth = ta.ema(cvd, smooth_len)
+
+// ─── DIVERGENCE DETECTION ─────────────────────────────────────────────────────
+// Bullish divergence: price makes lower low but CVD makes higher low
+// Bearish divergence: price makes higher high but CVD makes lower high
+
+price_low_lb  = ta.lowest(close, div_lookback)
+price_high_lb = ta.highest(close, div_lookback)
+cvd_low_lb    = ta.lowest(cvd_smooth, div_lookback)
+cvd_high_lb   = ta.highest(cvd_smooth, div_lookback)
+
+// Bullish: close < prior low AND cvd > prior cvd low
+bull_div = close <= price_low_lb[1] and cvd_smooth > cvd_low_lb[1] and close[1] == price_low_lb[1]
+// Bearish: close > prior high AND cvd < prior cvd high
+bear_div = close >= price_high_lb[1] and cvd_smooth < cvd_high_lb[1] and close[1] == price_high_lb[1]
+
+// ─── PLOTS ────────────────────────────────────────────────────────────────────
+plot(cvd_smooth, "CVD", color=cvd_smooth >= 0 ? color.teal : color.maroon, linewidth=2)
+hline(0, "Zero", color=color.gray, linestyle=hline.style_dashed)
+
+// Delta histogram
+hist_col = delta >= 0 ? color.new(color.green, 50) : color.new(color.red, 50)
+plot(show_hist ? delta : na, "Delta", style=plot.style_columns, color=hist_col)
+
+// Divergence markers
+plotshape(bull_div, "Bull Div", shape.labelup, location.bottom,
+          color=color.green, text="⬆ Div", textcolor=color.white, size=size.small)
+plotshape(bear_div, "Bear Div", shape.labeldown, location.top,
+          color=color.red, text="⬇ Div", textcolor=color.white, size=size.small)
+
+// Background on divergence
+bgcolor(bull_div ? color.new(color.green, 85) : bear_div ? color.new(color.red, 85) : na, title="Div bg")
+
+// ─── ALERTS ───────────────────────────────────────────────────────────────────
+alertcondition(alert_div and bull_div, "Bullish CVD Divergence",
+               "CVD bullish divergence — price lower low, CVD higher low")
+alertcondition(alert_div and bear_div, "Bearish CVD Divergence",
+               "CVD bearish divergence — price higher high, CVD lower high")

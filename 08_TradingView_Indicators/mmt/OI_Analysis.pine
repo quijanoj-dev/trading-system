@@ -1,0 +1,88 @@
+//@version=6
+// OI Analysis — Open Interest context for futures (ES, NQ, etc.)
+// Interprets OI change + price change to classify market regime.
+// Requires: TradingView Premium for OI data on futures.
+indicator("OI Analysis", overlay=false)
+
+// ─── INPUTS ───────────────────────────────────────────────────────────────────
+oi_smooth = input.int(5,    "OI Smoothing Period", minval=1)
+show_interp = input.bool(true, "Show Interpretation Labels")
+
+// ─── OI DATA ──────────────────────────────────────────────────────────────────
+// oi() is a Pine Script v6 built-in for futures open interest
+// Falls back gracefully if data unavailable (returns na)
+raw_oi      = request.security(syminfo.tickerid, timeframe.period, oi(), gaps=barmerge.gaps_off)
+oi_smooth_v = ta.ema(raw_oi, oi_smooth)
+oi_change   = oi_smooth_v - oi_smooth_v[1]
+oi_pct      = raw_oi != 0 ? (oi_change / raw_oi[1]) * 100 : 0.0
+
+// ─── PRICE CHANGE ─────────────────────────────────────────────────────────────
+price_change = close - close[1]
+price_up     = price_change > 0
+price_down   = price_change < 0
+oi_up        = oi_change > 0
+oi_down      = oi_change < 0
+
+// ─── REGIME CLASSIFICATION ────────────────────────────────────────────────────
+// Classic OI interpretation:
+//   Price↑ + OI↑ = New longs entering → STRONG TREND (bullish)
+//   Price↓ + OI↑ = New shorts entering → STRONG TREND (bearish)
+//   Price↑ + OI↓ = Short covering → WEAK rally (exhaustion risk)
+//   Price↓ + OI↓ = Long liquidation → WEAK selloff (oversold bounce risk)
+
+strong_bull  = price_up   and oi_up    // trend confirmation
+strong_bear  = price_down and oi_up    // trend confirmation
+weak_rally   = price_up   and oi_down  // short-covering, exhaustion risk
+weak_selloff = price_down and oi_down  // long liquidation, bounce risk
+
+regime_color =
+  strong_bull  ? color.new(color.green,  30) :
+  strong_bear  ? color.new(color.red,    30) :
+  weak_rally   ? color.new(color.yellow, 40) :
+  weak_selloff ? color.new(color.orange, 40) :
+  color.new(color.gray, 60)
+
+// ─── PLOTS ────────────────────────────────────────────────────────────────────
+plot(oi_pct, "OI Change %", color=regime_color, style=plot.style_columns, linewidth=2)
+plot(oi_pct, "OI Line",     color=color.new(color.white, 50), linewidth=1)
+hline(0, "Zero", color=color.gray, linestyle=hline.style_dashed)
+
+bgcolor(
+  strong_bull  ? color.new(color.green,  90) :
+  strong_bear  ? color.new(color.red,    90) :
+  weak_rally   ? color.new(color.yellow, 92) :
+  weak_selloff ? color.new(color.orange, 92) : na,
+  title="Regime bg"
+)
+
+// Interpretation labels (periodic, every N bars)
+if show_interp and bar_index % 5 == 0
+    lbl_text =
+      strong_bull  ? "STR↑" :
+      strong_bear  ? "STR↓" :
+      weak_rally   ? "WK↑"  :
+      weak_selloff ? "WK↓"  : ""
+    if lbl_text != ""
+        label.new(bar_index, oi_pct, lbl_text,
+                  style=label.style_none,
+                  color=regime_color,
+                  textcolor=color.white,
+                  size=size.tiny)
+
+// ─── INFORMATION TABLE ────────────────────────────────────────────────────────
+var table info_tbl = table.new(position.top_right, 2, 5, border_width=1)
+
+if barstate.islast
+    table.cell(info_tbl, 0, 0, "OI Change", text_color=color.gray, text_size=size.small)
+    table.cell(info_tbl, 1, 0, str.tostring(math.round(oi_change, 0)), text_color=oi_up ? color.green : color.red, text_size=size.small)
+    table.cell(info_tbl, 0, 1, "OI %", text_color=color.gray, text_size=size.small)
+    table.cell(info_tbl, 1, 1, str.tostring(math.round(oi_pct, 2)) + "%", text_color=oi_up ? color.green : color.red, text_size=size.small)
+    table.cell(info_tbl, 0, 2, "Regime", text_color=color.gray, text_size=size.small)
+    regime_str = strong_bull ? "STRONG BULL" : strong_bear ? "STRONG BEAR" : weak_rally ? "WEAK RALLY" : "WEAK SELLOFF"
+    table.cell(info_tbl, 1, 2, regime_str, text_color=regime_color, text_size=size.small)
+
+// ─── ALERTS ───────────────────────────────────────────────────────────────────
+alertcondition(strong_bull,  "OI: Strong Bullish", "Price up + OI up — new longs entering")
+alertcondition(strong_bear,  "OI: Strong Bearish", "Price down + OI up — new shorts entering")
+alertcondition(weak_rally,   "OI: Weak Rally",     "Price up + OI down — short covering, watch for exhaustion")
+alertcondition(weak_selloff, "OI: Weak Selloff",   "Price down + OI down — long liquidation, watch for bounce")
