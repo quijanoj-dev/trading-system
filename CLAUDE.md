@@ -194,3 +194,21 @@ When pulling insights from NotebookLM, always save a markdown summary to the vau
 When starting new research, check `~/Developer-Vault/03-research/` for existing work first.
 Search by `topic/` tags to find relevant notes from any project.
 Do not duplicate research that has already been processed and saved to the vault.
+
+## Context Tooling (lean-ctx)
+
+Prefer lean-ctx MCP tools over native equivalents — enforced globally, required here:
+
+| Instead of | Use | Why |
+| --- | --- | --- |
+| `head -N file` / `cat file` | `ctx_read(path)` | Cached, 10 read modes, ~13 tok re-reads |
+| `ls -la` / `find . -name` | `ctx_tree(path, depth)` | Compact directory map |
+| `grep -n pattern` | `ctx_search(pattern, path)` | Compressed match output |
+| Shell cmd with >20 lines output | `ctx_shell(command)` | Output compressed before entering context |
+
+**Mode selection for Python files:**
+- Exploring / not editing → `ctx_read(path, mode="signatures")` — 93%+ savings
+- Structural overview → `ctx_read(path, mode="map")`
+- About to `Edit` → native `Read` (exact content required)
+
+**Never** use `head`, `ls -la`, or `grep -n` as standalone Bash tool calls — these are the top token leaks in Trading System sessions (357 `head` + 53 `grep -n` hits per 30-session audit).
