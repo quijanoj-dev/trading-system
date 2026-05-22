@@ -2,19 +2,21 @@
 // OI Analysis — Open Interest context for futures (ES, NQ, etc.)
 // Interprets OI change + price change to classify market regime.
 // Requires: TradingView Premium for OI data on futures.
-indicator("OI Analysis", overlay=false)
+// OI Analysis (Vol Proxy) — Volume-delta proxy for Open Interest regime classification
+// For real OI data: TV Premium users can replace `raw_oi` with:
+//   request.security("CME_MINI:NQ1!_OI", timeframe.period, close)
+indicator("OI Analysis (Vol Proxy)", overlay=false)
 
 // ─── INPUTS ───────────────────────────────────────────────────────────────────
-oi_smooth = input.int(5,    "OI Smoothing Period", minval=1)
+smooth_len  = input.int(5,    "Smoothing Period", minval=1)
 show_interp = input.bool(true, "Show Interpretation Labels")
 
-// ─── OI DATA ──────────────────────────────────────────────────────────────────
-// oi() is a Pine Script v6 built-in for futures open interest
-// Falls back gracefully if data unavailable (returns na)
-raw_oi      = request.security(syminfo.tickerid, timeframe.period, oi(), gaps=barmerge.gaps_off)
-oi_smooth_v = ta.ema(raw_oi, oi_smooth)
-oi_change   = oi_smooth_v - oi_smooth_v[1]
-oi_pct      = raw_oi != 0 ? (oi_change / raw_oi[1]) * 100 : 0.0
+// ─── VOLUME PROXY ─────────────────────────────────────────────────────────────
+// Pine Script v6 indicators cannot access open_interest directly.
+// Smoothed volume change is used as an OI analogue — regime logic is identical.
+raw_oi      = ta.ema(volume, smooth_len)
+oi_change   = raw_oi - raw_oi[1]
+oi_pct      = raw_oi[1] != 0 ? (oi_change / raw_oi[1]) * 100 : 0.0
 
 // ─── PRICE CHANGE ─────────────────────────────────────────────────────────────
 price_change = close - close[1]
