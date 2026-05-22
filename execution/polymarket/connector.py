@@ -1,7 +1,7 @@
 """Polymarket CLOB API connector.
 
 Requires:
-    pip install poly-clob-client
+    pip install py-clob-client
     POLYMARKET_API_KEY and POLYMARKET_SECRET environment variables.
 
 Docs: https://docs.polymarket.com
@@ -61,7 +61,7 @@ class PolymarketConnector:
 
         if live:
             if not HAS_CLOB:
-                raise ImportError("pip install poly-clob-client")
+                raise ImportError("pip install py-clob-client")
             api_key = os.environ.get("POLYMARKET_API_KEY")
             secret = os.environ.get("POLYMARKET_SECRET")
             passphrase = os.environ.get("POLYMARKET_PASSPHRASE", "")
@@ -84,7 +84,7 @@ class PolymarketConnector:
     ) -> List[PolymarketMarket]:
         """Fetch open markets. Filters by volume and spread thresholds."""
         if not HAS_CLOB:
-            raise ImportError("pip install poly-clob-client")
+            raise ImportError("pip install py-clob-client")
 
         client = self._client or ClobClient(host="https://clob.polymarket.com", chain_id=137)
         response = client.get_markets()
@@ -120,7 +120,7 @@ class PolymarketConnector:
                     spread=spread,
                     active=m.get("active", True),
                 ))
-            except (KeyError, TypeError, ValueError):
+            except (KeyError, TypeError, ValueError, AttributeError):
                 continue
 
         return results
@@ -128,7 +128,7 @@ class PolymarketConnector:
     def get_orderbook(self, market_id: str) -> Dict[str, Any]:
         """Fetch orderbook for a market."""
         if not HAS_CLOB:
-            raise ImportError("pip install poly-clob-client")
+            raise ImportError("pip install py-clob-client")
         client = self._client or ClobClient(host="https://clob.polymarket.com", chain_id=137)
         return client.get_order_book(market_id)
 
