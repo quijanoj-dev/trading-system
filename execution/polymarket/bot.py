@@ -58,9 +58,7 @@ def scan_markets(connector: PolymarketConnector, strategies: List[PolymarketStra
 
 
 def format_signal(signal: PolymarketSignal, account_value: float) -> str:
-    size = signal.market.__class__  # get strategy class for sizing
-    # Use strategy's base size method
-    position_size = min(signal.fractional_kelly * account_value, 0.02 * account_value)
+    position_size = min(signal.fractional_kelly() * account_value, 0.02 * account_value)
 
     return (
         f"\n{'='*60}\n"
@@ -112,7 +110,7 @@ def run_loop(live: bool = False, once: bool = False) -> None:
                     # Human-in-the-loop: require explicit confirmation
                     confirm = input(f"  Execute BUY {sig.direction}? [y/N]: ").strip().lower()
                     if confirm == "y":
-                        size = min(sig.fractional_kelly * ACCOUNT_VALUE, 0.02 * ACCOUNT_VALUE)
+                        size = min(sig.fractional_kelly() * ACCOUNT_VALUE, 0.02 * ACCOUNT_VALUE)
                         order = connector.place_order(
                             market_id=sig.market.market_id,
                             side=sig.direction,

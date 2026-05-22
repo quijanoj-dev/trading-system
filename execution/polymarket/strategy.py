@@ -19,7 +19,6 @@ class PolymarketSignal:
     rationale: str
     kelly_fraction: float   # raw Kelly (use fractional_kelly for sizing)
 
-    @property
     def fractional_kelly(self, fraction: float = 0.25) -> float:
         return self.kelly_fraction * fraction
 
