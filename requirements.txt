@@ -2,3 +2,6 @@ pytest>=8.0
 py-clob-client>=0.14
 requests>=2.31
 pandas>=2.0
+hmmlearn>=0.3
+numpy>=1.24
+pyyaml>=6.0

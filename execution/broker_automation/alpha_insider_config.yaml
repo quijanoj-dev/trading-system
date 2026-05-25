@@ -1,0 +1,22 @@
+# Alpha Insider Broker Automation Config
+# Set ALPHA_INSIDER_API_TOKEN env var — never hardcode here.
+
+strategy_id: ""          # from Alpha Insider dashboard → copy Strategy ID
+webhook_url: ""          # from Alpha Insider dashboard → copy Webhook URL
+base_url: "https://app.alphainsider.com"
+
+# TradingView alert JSON format (paste into TradingView alert message field):
+# {
+#   "action": "{{strategy.order.action}}",
+#   "contracts": "{{strategy.order.contracts}}",
+#   "price": "{{close}}",
+#   "ticker": "{{ticker}}"
+# }
+
+broker:
+  name: ""               # e.g. "alpaca", "ibkr", "tradovate"
+  paper_trading: true    # set false for live
+
+notification:
+  on_fill: true
+  on_error: true

@@ -1,0 +1,4 @@
+lookback_period: 252       # bars of OHLCV used for fitting
+n_iter: 100                # HMM EM iterations
+covariance_type: full      # full | diag | tied | spherical
+retrain_every_n_bars: 50   # not enforced by detector; caller decides when to re-fit
