@@ -40,7 +40,7 @@ CONSISTENCY_RULE: no single day > 30% of total account gain
 ## Checklist
 - [ ] Check economic calendar (https://www.forexfactory.com)
 - [ ] Review overnight high/low on ES1! and NQ1!
-- [ ] Confirm $ADD and $TICK opening direction on Market_Internals indicator
+- [ ] Confirm \$ADD and \$TICK opening direction on Market_Internals indicator
 - [ ] Set CVD long-only mode if regime = bull
 EOF
 
