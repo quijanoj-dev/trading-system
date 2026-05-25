@@ -32,3 +32,10 @@
 # Project-OS overlay (auto-generated, lives in ~/.project-os)
 .project-os/
 .claude/.local-overrides.md
+
+# Candle store data (fetched at runtime, not versioned)
+execution/market_data/data/
+
+# Session context (runtime state, not versioned)
+context/session.md
+context/regime_signal.json

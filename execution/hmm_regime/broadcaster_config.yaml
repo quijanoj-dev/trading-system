@@ -1,0 +1,10 @@
+# Regime Broadcaster Config
+# Fetches OHLCV via yfinance, runs HMM regime detection, outputs signal.
+
+ticker: "ES=F"          # yfinance symbol (ES futures continuous)
+period: "1y"            # lookback period for HMM fit
+interval: "1d"          # bar interval
+
+output_mode: "stdout"   # stdout | file | webhook
+output_file: "context/regime_signal.json"
+webhook_url: ""         # fill with Alpha Insider webhook URL when account is set up
