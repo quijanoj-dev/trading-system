@@ -1,0 +1,40 @@
+//@version=6
+// ATR Vstop — Volatility-adaptive trailing stop
+// Defaults (length=22, mult=3.0) tuned for ES/NQ futures per NLM source audit.
+// These settings filter wick hunts that stop-out trend continuation trades.
+indicator("ATR Vstop", overlay=true)
+
+length = input.int(22,  "ATR Length",     minval=1)
+mult   = input.float(3.0, "ATR Multiplier", minval=0.1, step=0.1)
+
+atr = ta.atr(length)
+
+var float vstop = na
+var int   trend = 1
+
+upper = close + mult * atr
+lower = close - mult * atr
+
+vstop := nz(vstop[1])
+if trend == 1
+    vstop := math.max(vstop, lower)
+    if close < vstop
+        trend := -1
+        vstop := upper
+else
+    vstop := math.min(vstop, upper)
+    if close > vstop
+        trend := 1
+        vstop := lower
+
+vstop_col = trend == 1 ? color.new(color.green, 0) : color.new(color.red, 0)
+plot(vstop, "Vstop", color=vstop_col, linewidth=2, style=plot.style_linebr)
+
+// Signal dots on flip
+plotshape(trend == 1 and trend[1] == -1, "Flip Long",  shape.circle, location.belowbar,
+          color=color.green, size=size.small)
+plotshape(trend == -1 and trend[1] == 1, "Flip Short", shape.circle, location.abovebar,
+          color=color.red,   size=size.small)
+
+alertcondition(trend == 1  and trend[1] == -1, "Vstop Flip Long",  "ATR Vstop flipped bullish")
+alertcondition(trend == -1 and trend[1] == 1,  "Vstop Flip Short", "ATR Vstop flipped bearish")

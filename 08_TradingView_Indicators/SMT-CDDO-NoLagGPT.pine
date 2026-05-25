@@ -24,7 +24,7 @@ string sym1Input = input.symbol('NQ1!', '', group=SYM_GROUP, inline='s1',
      tooltip='Manual fallback symbol when auto ES↔NQ pairing is not used.')
 bool sym1AutoESNQ = input.bool(true, 'Auto ES↔NQ Pairing', group=SYM_GROUP,
      tooltip='If enabled: ES/MES charts use NQ1! as Symbol 1, and NQ/MNQ charts use ES1! as Symbol 1.')
-bool   sym2On    = input.bool(false, 'Symbol 2', group=SYM_GROUP, inline='s2')
+bool   sym2On    = input.bool(true, 'Symbol 2', group=SYM_GROUP, inline='s2')
 string sym2Input = input.symbol('YM1!', '', group=SYM_GROUP, inline='s2')
 bool   sym3On    = input.bool(false, 'Symbol 3', group=SYM_GROUP, inline='s3')
 string sym3Input = input.symbol('RTY1!', '', group=SYM_GROUP, inline='s3',
@@ -43,7 +43,7 @@ int   smtBreakLen          = input.int(6, 'SMT Reversal Break Lookback', minval=
 bool  useSMTATRSwingFilter = input.bool(true, 'Use SMT ATR Swing Filter', group=SMT_FILTER_GROUP)
 float smtMinATRSwing       = input.float(0.5, 'SMT Min Swing (ATR)', minval=0.0, maxval=5.0, step=0.1, group=SMT_FILTER_GROUP)
 int   smtCooldownBars      = input.int(8, 'SMT Signal Cooldown (bars)', minval=0, maxval=200, group=SMT_FILTER_GROUP)
-int   smtMinConfirmations  = input.int(1, 'SMT Min Symbol Confirmations', minval=1, maxval=3, group=SMT_FILTER_GROUP,
+int   smtMinConfirmations  = input.int(2, 'SMT Min Symbol Confirmations', minval=1, maxval=3, group=SMT_FILTER_GROUP,
      tooltip='Require at least this many symbol confirmations before plotting SMT signal.')
 
 // ████████████████████████████████████████████████████████████████████████

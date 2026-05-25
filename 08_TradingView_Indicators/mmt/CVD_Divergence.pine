@@ -11,6 +11,18 @@ div_lookback  = input.int(14,   "Divergence Lookback", minval=5, maxval=50)
 show_hist     = input.bool(true, "Show Delta Histogram")
 alert_div     = input.bool(true, "Alert on Divergence")
 
+// ─── FILTERS ──────────────────────────────────────────────────────────────────
+atr_gate_on  = input.bool(false, "ATR Swing Gate",                        group="Filters",
+     tooltip="Require minimum price swing (in ATR units) before plotting divergence. Reduces noise on tight ranges.")
+atr_mult     = input.float(0.3,  "Min Swing (ATR×)", minval=0.1, maxval=2.0, step=0.1, group="Filters")
+vol_exhaust  = input.bool(false, "Volume Exhaustion Filter",               group="Filters",
+     tooltip="Approximate footprint exhaustion: signal only when volume is below threshold × 20-bar average.")
+exhaust_mult = input.float(0.6,  "Exhaustion Vol Threshold (× avg)",      group="Filters",
+     minval=0.1, maxval=1.0, step=0.05)
+long_only    = input.bool(false, "Long-Only Mode (suppress bear signals)", group="Filters",
+     tooltip="Enable when HMM regime = BULL. Hides bearish divergence labels to reduce counter-trend noise.")
+show_exhaust = input.bool(true,  "Show Exhaustion Markers",                group="Filters")
+
 // ─── DELTA APPROXIMATION ──────────────────────────────────────────────────────
 // Estimate buying vs selling volume from close position in the candle range.
 // close at top → all buying. close at bottom → all selling.
@@ -35,10 +47,24 @@ price_high_lb = ta.highest(close, div_lookback)
 cvd_low_lb    = ta.lowest(cvd_smooth, div_lookback)
 cvd_high_lb   = ta.highest(cvd_smooth, div_lookback)
 
-// Bullish: close < prior low AND cvd > prior cvd low
-bull_div = close <= price_low_lb[1] and cvd_smooth > cvd_low_lb[1] and close[1] == price_low_lb[1]
-// Bearish: close > prior high AND cvd < prior cvd high
-bear_div = close >= price_high_lb[1] and cvd_smooth < cvd_high_lb[1] and close[1] == price_high_lb[1]
+// ─── FILTERS ──────────────────────────────────────────────────────────────────
+atr_val   = ta.atr(14)
+avg_vol   = ta.sma(volume, 20)
+
+// Volume exhaustion: low volume at signal bar approximates footprint <9 contracts
+is_exhaust = vol_exhaust ? volume < avg_vol * exhaust_mult : true
+
+// Raw divergence signals
+bull_div_raw = close <= price_low_lb[1] and cvd_smooth > cvd_low_lb[1] and close[1] == price_low_lb[1]
+bear_div_raw = close >= price_high_lb[1] and cvd_smooth < cvd_high_lb[1] and close[1] == price_high_lb[1]
+
+// ATR swing gate: require meaningful price move
+swing_ok_bull = not atr_gate_on or math.abs(close - price_low_lb[1])  >= atr_mult * atr_val
+swing_ok_bear = not atr_gate_on or math.abs(close - price_high_lb[1]) >= atr_mult * atr_val
+
+// Final signals with all filters applied
+bull_div = bull_div_raw and swing_ok_bull and is_exhaust
+bear_div = bear_div_raw and swing_ok_bear and is_exhaust and not long_only
 
 // ─── PLOTS ────────────────────────────────────────────────────────────────────
 plot(cvd_smooth, "CVD", color=cvd_smooth >= 0 ? color.teal : color.maroon, linewidth=2)
@@ -56,6 +82,11 @@ plotshape(bear_div, "Bear Div", shape.labeldown, location.top,
 
 // Background on divergence
 bgcolor(bull_div ? color.new(color.green, 85) : bear_div ? color.new(color.red, 85) : na, title="Div bg")
+
+// Exhaustion marker — orange circle when vol filter active and signal bar qualifies
+plotshape(show_exhaust and vol_exhaust and is_exhaust and (bull_div_raw or bear_div_raw),
+          "Exhaust", shape.circle, location.belowbar,
+          color=color.new(color.orange, 40), size=size.tiny)
 
 // ─── ALERTS ───────────────────────────────────────────────────────────────────
 alertcondition(alert_div and bull_div, "Bullish CVD Divergence",

@@ -1,0 +1,54 @@
+//@version=6
+// Market Internals — $ADD + $TICK divergence panel for ES/NQ
+// $ADD (NYSE Advance-Decline): divergence from index = institutional breadth signal
+// $TICK: extreme readings (±600 / ±1000) mark short-term exhaustion
+// Apply to ES1! or NQ1! chart. Use as confirmation layer for CVD divergence entries.
+indicator("Market Internals — $ADD + $TICK", overlay=false)
+
+// ─── INPUTS ───────────────────────────────────────────────────────────────────
+tick_high = input.int(600,   "$TICK Exhaustion High",    minval=100,  maxval=2000)
+tick_low  = input.int(-600,  "$TICK Exhaustion Low",     minval=-2000, maxval=-100)
+show_add  = input.bool(true,  "Show $ADD Line")
+show_tick = input.bool(true,  "Show $TICK Line")
+div_lb    = input.int(20,    "Divergence Lookback (bars)", minval=5, maxval=100)
+
+// ─── DATA FEEDS ───────────────────────────────────────────────────────────────
+add_val  = request.security("USIDC:ADD",   timeframe.period, close, gaps=barmerge.gaps_off)
+tick_val = request.security("USI:TICK.US", timeframe.period, close, gaps=barmerge.gaps_off)
+
+// ─── $ADD DIVERGENCE ──────────────────────────────────────────────────────────
+// Bullish: index makes lower low but $ADD makes higher low → sellers losing breadth
+idx_low_lb  = ta.lowest(close, div_lb)
+add_low_lb  = ta.lowest(add_val, div_lb)
+add_bull_div = close <= idx_low_lb[1] and add_val > add_low_lb[1] and close[1] == idx_low_lb[1]
+
+// Bearish: index makes higher high but $ADD makes lower high → buyers losing breadth
+idx_high_lb = ta.highest(close, div_lb)
+add_high_lb = ta.highest(add_val, div_lb)
+add_bear_div = close >= idx_high_lb[1] and add_val < add_high_lb[1] and close[1] == idx_high_lb[1]
+
+// ─── PLOTS ────────────────────────────────────────────────────────────────────
+plot(show_add  ? add_val  : na, "$ADD",  color=color.new(color.blue,   0), linewidth=1)
+plot(show_tick ? tick_val : na, "$TICK", color=color.new(color.orange, 0), linewidth=1)
+
+hline(tick_high, "$TICK High",  color=color.new(color.red,   40), linestyle=hline.style_dashed)
+hline(tick_low,  "$TICK Low",   color=color.new(color.green, 40), linestyle=hline.style_dashed)
+hline(1000,  "$TICK +1000", color=color.new(color.red,   60), linestyle=hline.style_dotted)
+hline(-1000, "$TICK -1000", color=color.new(color.green, 60), linestyle=hline.style_dotted)
+hline(0, "Zero", color=color.gray, linestyle=hline.style_dotted)
+
+// Divergence labels
+plotshape(add_bull_div, "ADD Bull Div", shape.labelup,   location.bottom,
+          color=color.green, text="ADD⬆", textcolor=color.white, size=size.small)
+plotshape(add_bear_div, "ADD Bear Div", shape.labeldown, location.top,
+          color=color.red,   text="ADD⬇", textcolor=color.white, size=size.small)
+
+// Background: TICK extreme zones
+bgcolor(tick_val >= tick_high  ? color.new(color.red,   88) :
+        tick_val <= tick_low   ? color.new(color.green, 88) : na, title="TICK Extreme bg")
+
+// ─── ALERTS ───────────────────────────────────────────────────────────────────
+alertcondition(add_bull_div,          "ADD Bullish Divergence",  "$ADD bullish div — index lower low, ADD higher low")
+alertcondition(add_bear_div,          "ADD Bearish Divergence",  "$ADD bearish div — index higher high, ADD lower high")
+alertcondition(tick_val >= tick_high, "$TICK Exhaustion High",   "$TICK reached upside exhaustion threshold")
+alertcondition(tick_val <= tick_low,  "$TICK Exhaustion Low",    "$TICK reached downside exhaustion threshold")

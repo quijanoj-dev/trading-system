@@ -51,7 +51,7 @@ string RT_CONFIRM_GROUP = '══════ Real-Time Confirmation ═══�
 float  wickRejectRatio = input.float(0.10, 'Min Wick Reject Ratio', minval=0.0, maxval=1.0, step=0.05,
      group=RT_CONFIRM_GROUP,
      tooltip='Wick rejection filter: ratio of rejecting wick to total bar range. Higher = stricter, 0 = disabled. Try 0.2-0.4 to reduce noise.')
-float  smtVolZThreshold = input.float(0.0, 'SMT Volume Z-Score Threshold', minval=0.0, maxval=3.0, step=0.1,
+float  smtVolZThreshold = input.float(0.5, 'SMT Volume Z-Score Threshold', minval=0.0, maxval=3.0, step=0.1,
      group=RT_CONFIRM_GROUP,
      tooltip='Minimum volume Z-score at detection bar for SMT swing validation. 0 = disabled. Try 0.5-1.0 to reduce noise.')
 float  smtMinATRSwing = input.float(0.3, 'SMT Min Price Swing (ATR×)', minval=0.0, maxval=3.0, step=0.1,
