@@ -35,15 +35,15 @@ ES1! (primary) / NQ1! (SMT correlation)
 
 | Metric | Result |
 |--------|--------|
-| Net profit | $1,257.50 |
-| Profit factor | inf |
-| Win rate | 100.0% |
-| Average win | $1,257.50 |
-| Average loss | $0.00 |
-| Expectancy (R) | $1,257.50 |
-| Max drawdown | 0.00%  ($0.00) |
-| Max losing streak | 0 |
-| Total trades | 1 |
+| Net profit | $-579.04 |
+| Profit factor | 0.36 |
+| Win rate | 8.3% |
+| Average win | $241.61 |
+| Average loss | $121.83 |
+| Expectancy (R) | $-91.54 |
+| Max drawdown | 2.52%  ($629.78) |
+| Max losing streak | 2 |
+| Total trades | 24 |
 | Avg trades / week | — |
 | Avg hold time (bars) | — |
 
