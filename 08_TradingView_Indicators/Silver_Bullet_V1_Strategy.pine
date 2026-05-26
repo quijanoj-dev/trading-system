@@ -1,0 +1,167 @@
+//@version=6
+// Silver Bullet V1 — Backtestable approximation of the 4-signal confluence system.
+// Rules: 10:00-11:00 ET | stop hunt | confirmed SMT | FVG | CHoCH minimum
+// NOTE: simplified proxies for stop hunt and CHoCH — not identical to indicator output.
+// Purpose: validate directional edge, estimate win rate / R distribution.
+// Apply on: ES1! or MES1!, 1-minute chart, 3-6 months of data.
+strategy(
+    title              = "Silver Bullet V1 — 10:00–11:00 ET",
+    shorttitle         = "SBV1",
+    overlay            = true,
+    initial_capital    = 25000,
+    default_qty_type   = strategy.fixed,
+    default_qty_value  = 1,
+    commission_type    = strategy.commission.cash_per_contract,
+    commission_value   = 2.50,
+    slippage           = 1,
+    calc_on_every_tick = false
+)
+
+// ─── INPUTS ───────────────────────────────────────────────────────────────────
+grpTime  = "Session"
+grpSetup = "Setup Parameters"
+grpRisk  = "Risk"
+
+i_session = input.session("1000-1100", "Silver Bullet Window (ET)", group=grpTime)
+i_tz      = input.string("America/New_York", "Timezone", group=grpTime)
+i_sym2    = input.symbol("NQ1!", "SMT Symbol (correlated pair)", group=grpSetup,
+             tooltip="For ES1! use NQ1!. For NQ1! use ES1!.")
+i_swing   = input.int(5,   "Swing Pivot Length",    minval=2, maxval=20, group=grpSetup)
+i_shbars  = input.int(20,  "Stop Hunt Lookback",    minval=5, maxval=60, group=grpSetup,
+             tooltip="Bars back to search for recent swing levels that get swept.")
+i_fvgmin  = input.float(1.0, "Min FVG (points)",   minval=0.1, group=grpSetup)
+i_expiry  = input.int(6,   "Setup Expiry (bars)",   minval=2, maxval=20, group=grpSetup,
+             tooltip="How many bars the stop hunt and FVG stay 'active' before expiring.")
+i_r       = input.float(2.0, "R Multiple Target",   minval=0.5, step=0.5, group=grpRisk)
+
+// ─── SESSION GATE ─────────────────────────────────────────────────────────────
+inSession = not na(time(timeframe.period, i_session, i_tz))
+
+// ─── SMT DATA ─────────────────────────────────────────────────────────────────
+sym2Low  = request.security(i_sym2, timeframe.period, low,  barmerge.gaps_off, barmerge.lookahead_off)
+sym2High = request.security(i_sym2, timeframe.period, high, barmerge.gaps_off, barmerge.lookahead_off)
+
+// ─── SWING PIVOTS ─────────────────────────────────────────────────────────────
+ph = ta.pivothigh(high, i_swing, i_swing)
+pl = ta.pivotlow(low,   i_swing, i_swing)
+
+var float lastPH = na
+var float lastPL = na
+if not na(ph)
+    lastPH := ph
+if not na(pl)
+    lastPL := pl
+
+// ─── STOP HUNT ────────────────────────────────────────────────────────────────
+// Bullish: current bar wicks below the lowest low of prior i_shbars bars, then closes above it.
+// Bearish: current bar wicks above the highest high of prior i_shbars bars, then closes below it.
+recentLow  = ta.lowest(low[1],  i_shbars)
+recentHigh = ta.highest(high[1], i_shbars)
+
+bullHunt = low < recentLow  and close > recentLow
+bearHunt = high > recentHigh and close < recentHigh
+
+// ─── FVG ──────────────────────────────────────────────────────────────────────
+// 3-candle imbalance: current bar[0] gaps away from bar[2].
+// Bullish FVG: current low > bar[2] high (gap above bar[2]).
+// Bearish FVG: current high < bar[2] low (gap below bar[2]).
+bullFVGnow = low > high[2] and (low - high[2]) >= i_fvgmin
+bearFVGnow = high < low[2] and (low[2] - high) >= i_fvgmin
+
+var bool hasBullFVG  = false
+var bool hasBearFVG  = false
+var int  bullFVGbar  = na
+var int  bearFVGbar  = na
+
+if bullFVGnow
+    hasBullFVG := true
+    bullFVGbar := bar_index
+
+if bearFVGnow
+    hasBearFVG := true
+    bearFVGbar := bar_index
+
+// Expire after i_expiry bars
+if hasBullFVG and not na(bullFVGbar) and (bar_index - bullFVGbar) > i_expiry
+    hasBullFVG := false
+
+if hasBearFVG and not na(bearFVGbar) and (bar_index - bearFVGbar) > i_expiry
+    hasBearFVG := false
+
+// ─── CHoCH ────────────────────────────────────────────────────────────────────
+// Close crosses through the most recent confirmed opposing swing pivot.
+// Bullish CHoCH: close breaks above the last confirmed swing high.
+// Bearish CHoCH: close breaks below the last confirmed swing low.
+bullCHoCH = not na(lastPH) and close > lastPH and close[1] <= lastPH
+bearCHoCH = not na(lastPL) and close < lastPL and close[1] >= lastPL
+
+// ─── SMT DIVERGENCE (CONFIRMED, CLOSED BAR) ───────────────────────────────────
+// Bullish SMT: ES makes lower low than prior bar, NQ makes higher low — divergence.
+// Bearish SMT: ES makes higher high than prior bar, NQ makes lower high — divergence.
+bullSMT = low  < low[1]  and sym2Low  > sym2Low[1]
+bearSMT = high > high[1] and sym2High < sym2High[1]
+
+// ─── SETUP STATE (SEQUENTIAL: hunt → confluence) ──────────────────────────────
+var bool bullHuntActive = false
+var bool bearHuntActive = false
+var int  bullHuntBar    = na
+var int  bearHuntBar    = na
+
+if bullHunt and inSession
+    bullHuntActive := true
+    bullHuntBar    := bar_index
+
+if bearHunt and inSession
+    bearHuntActive := true
+    bearHuntBar    := bar_index
+
+// Expire hunt state
+if bullHuntActive and not na(bullHuntBar) and (bar_index - bullHuntBar) > i_expiry
+    bullHuntActive := false
+
+if bearHuntActive and not na(bearHuntBar) and (bar_index - bearHuntBar) > i_expiry
+    bearHuntActive := false
+
+// ─── ENTRY: ALL 4 SIGNALS REQUIRED ───────────────────────────────────────────
+goLong  = bullHuntActive and hasBullFVG and bullSMT and bullCHoCH and inSession and strategy.position_size == 0
+goShort = bearHuntActive and hasBearFVG and bearSMT and bearCHoCH and inSession and strategy.position_size == 0
+
+// ─── STOP / TARGET ────────────────────────────────────────────────────────────
+// Stop = low/high of candle after sweep (proxy: prior bar, since entry fires bar after hunt)
+longStop    = low[1]
+shortStop   = high[1]
+longTarget  = close + (close - longStop)  * i_r
+shortTarget = close - (shortStop - close) * i_r
+
+// ─── EXECUTE ──────────────────────────────────────────────────────────────────
+if goLong
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long XIT", "Long", stop=longStop, limit=longTarget)
+    bullHuntActive := false
+
+if goShort
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short XIT", "Short", stop=shortStop, limit=shortTarget)
+    bearHuntActive := false
+
+// Close at session end (no overnight holds)
+if not inSession and strategy.position_size != 0
+    strategy.close_all(comment="session end")
+
+// ─── VISUALS ──────────────────────────────────────────────────────────────────
+bgcolor(inSession ? color.new(color.blue, 93) : na, title="Silver Bullet Window")
+
+plotshape(bullHunt and inSession, "Bull Hunt",    shape.triangleup,   location.belowbar,
+          color.new(color.green, 0), size=size.tiny)
+plotshape(bearHunt and inSession, "Bear Hunt",    shape.triangledown, location.abovebar,
+          color.new(color.red, 0),   size=size.tiny)
+plotshape(goLong,                 "Long Signal",  shape.labelup,      location.belowbar,
+          color.lime,  size=size.small, text="L")
+plotshape(goShort,                "Short Signal", shape.labeldown,    location.abovebar,
+          color.red,   size=size.small, text="S")
+
+// Debug: show SMT and CHoCH signals
+plotshape(bullSMT  and inSession, "Bull SMT",   shape.circle, location.belowbar, color.new(color.teal,  40), size=size.tiny)
+plotshape(bearSMT  and inSession, "Bear SMT",   shape.circle, location.abovebar, color.new(color.orange,40), size=size.tiny)
+plotshape(bullCHoCH and inSession,"Bull CHoCH", shape.cross,  location.belowbar, color.new(color.aqua,  40), size=size.tiny)
+plotshape(bearCHoCH and inSession,"Bear CHoCH", shape.cross,  location.abovebar, color.new(color.purple,40), size=size.tiny)
