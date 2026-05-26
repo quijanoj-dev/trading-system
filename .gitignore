@@ -39,3 +39,6 @@ execution/market_data/data/
 # Session context (runtime state, not versioned)
 context/session.md
 context/regime_signal.json
+
+# Agentic QS pipeline runs (generated artifacts, not versioned)
+execution/agents/output/
