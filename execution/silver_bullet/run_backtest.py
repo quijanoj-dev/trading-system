@@ -125,12 +125,14 @@ def main() -> None:
 
     # Signal parameters
     sig = p.add_argument_group("Signal parameters")
-    sig.add_argument("--r",       type=float, default=2.0,  help="R multiple target (default: 2.0)")
-    sig.add_argument("--expiry",  type=int,   default=6,    help="Signal expiry bars (default: 6)")
-    sig.add_argument("--fvg-min", type=float, default=1.0,  help="Min FVG gap in points (default: 1.0)")
-    sig.add_argument("--swing",   type=int,   default=5,    help="Pivot swing length (default: 5)")
-    sig.add_argument("--sh-bars", type=int,   default=20,   help="Stop hunt lookback bars (default: 20)")
-    sig.add_argument("--no-smt",  action="store_true",      help="Drop SMT (3-signal mode: Hunt+FVG+CHoCH)")
+    sig.add_argument("--r",        type=float, default=2.0,  help="R multiple target (default: 2.0)")
+    sig.add_argument("--expiry",   type=int,   default=6,    help="Signal expiry bars (default: 6)")
+    sig.add_argument("--fvg-min",  type=float, default=1.0,  help="Min FVG gap in points (default: 1.0)")
+    sig.add_argument("--swing",    type=int,   default=5,    help="Pivot swing length (default: 5)")
+    sig.add_argument("--sh-bars",  type=int,   default=20,   help="Stop hunt lookback bars (default: 20)")
+    sig.add_argument("--atr-mult", type=float, default=0.5,
+                     help="ATR(14) buffer below/above hunt-wick for stop (default: 0.5; 0=no buffer)")
+    sig.add_argument("--no-smt",   action="store_true",      help="Drop SMT (3-signal mode: Hunt+FVG+CHoCH)")
 
     # Risk / output
     out = p.add_argument_group("Risk / output")
@@ -198,6 +200,7 @@ def main() -> None:
         expiry_bars=args.expiry,
         r_multiple=args.r,
         require_smt=not args.no_smt,
+        atr_mult=args.atr_mult,
     )
     print(f"  Signals found: {len(signals)}")
 

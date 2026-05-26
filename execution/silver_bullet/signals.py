@@ -23,6 +23,14 @@ import pytz
 
 from execution.backtester import Signal
 
+
+def _compute_atr(highs: pd.Series, lows: pd.Series, closes: pd.Series, period: int = 14) -> pd.Series:
+    hl  = highs - lows
+    hpc = (highs - closes.shift(1)).abs()
+    lpc = (lows  - closes.shift(1)).abs()
+    tr  = pd.concat([hl, hpc, lpc], axis=1).max(axis=1)
+    return tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+
 _ET = pytz.timezone("America/New_York")
 _SESSION_START = time(10, 0)
 _SESSION_END = time(11, 0)
@@ -69,6 +77,7 @@ def generate_signals(
     expiry_bars: int = 6,
     r_multiple: float = 2.0,
     require_smt: bool = True,
+    atr_mult: float = 0.5,
 ) -> list[Signal]:
     """
     Generate Silver Bullet V1 trade signals.
@@ -82,6 +91,8 @@ def generate_signals(
         fvg_min:      Minimum FVG gap in points to qualify.
         expiry_bars:  Bars each signal flag stays active after firing.
         r_multiple:   Risk-reward multiple for target calculation.
+        atr_mult:     ATR(14) buffer added below/above the hunt-candle extreme for stop.
+                      0.0 = stop exactly at the hunt wick; 0.5 (default) = 0.5×ATR buffer.
 
     Returns:
         List of Signal objects, one per qualifying setup.
@@ -90,12 +101,14 @@ def generate_signals(
     es = es.loc[common].copy()
     nq = nq.loc[common].copy()
 
+    atr = _compute_atr(es["high"], es["low"], es["close"])
+
     n = len(es)
     signals: list[Signal] = []
 
     # State flags (mirrors Pine v2 state variables)
-    bull_hunt_on = False;  bull_hunt_bar = -9999
-    bear_hunt_on = False;  bear_hunt_bar = -9999
+    bull_hunt_on  = False;  bull_hunt_bar  = -9999;  bull_hunt_low  = 0.0
+    bear_hunt_on  = False;  bear_hunt_bar  = -9999;  bear_hunt_high = 0.0
     bull_fvg_on  = False;  bull_fvg_bar  = -9999
     bear_fvg_on  = False;  bear_fvg_bar  = -9999
     bull_smt_on  = False;  bull_smt_bar  = -9999
@@ -146,9 +159,9 @@ def generate_signals(
         bear_hunt_raw = es["high"].iloc[i] > recent_high and es["close"].iloc[i] < recent_high
 
         if bull_hunt_raw:
-            bull_hunt_on = True;  bull_hunt_bar = i
+            bull_hunt_on = True;  bull_hunt_bar = i;  bull_hunt_low  = es["low"].iloc[i]
         if bear_hunt_raw:
-            bear_hunt_on = True;  bear_hunt_bar = i
+            bear_hunt_on = True;  bear_hunt_bar = i;  bear_hunt_high = es["high"].iloc[i]
 
         # FVG (3-bar gap)
         bull_fvg_raw = (
@@ -199,11 +212,13 @@ def generate_signals(
         go_short = bear_choch and bear_hunt_on and bear_fvg_on and smt_ok_short
 
         if go_long:
-            entry = es["close"].iloc[i]
-            stop  = es["low"].iloc[i - 1]
-            if entry - stop < 0.25:  # degenerate: stop too close
+            entry  = es["close"].iloc[i]
+            buf    = atr_mult * atr.iloc[i] if atr_mult > 0 else 0.0
+            stop   = bull_hunt_low - buf     # structural stop: hunt-wick low minus ATR buffer
+            risk   = entry - stop
+            if risk < 0.25:
                 continue
-            target = entry + (entry - stop) * r_multiple
+            target = entry + risk * r_multiple
             signals.append(Signal(
                 timestamp=ts,
                 direction="long",
@@ -217,11 +232,13 @@ def generate_signals(
             bull_smt_on  = False
 
         elif go_short:
-            entry = es["close"].iloc[i]
-            stop  = es["high"].iloc[i - 1]
-            if stop - entry < 0.25:
+            entry  = es["close"].iloc[i]
+            buf    = atr_mult * atr.iloc[i] if atr_mult > 0 else 0.0
+            stop   = bear_hunt_high + buf    # structural stop: hunt-wick high plus ATR buffer
+            risk   = stop - entry
+            if risk < 0.25:
                 continue
-            target = entry - (stop - entry) * r_multiple
+            target = entry - risk * r_multiple
             signals.append(Signal(
                 timestamp=ts,
                 direction="short",
