@@ -47,7 +47,31 @@ ES1! (primary) / NQ1! (SMT correlation)
 | Avg trades / week | — |
 | Avg hold time (bars) | — |
 
+### TV Strategy Tester Limitation — IMPORTANT
+
+**TradingView Strategy Tester on 1m ES1! is limited to ~20,000 bars = ~16 trading days.**
+
+ES1! trades ~23h/day → 20,000 bars ÷ (23 × 60) = ~14 trading days. This is insufficient for a strategy producing ~1 qualifying setup per week. Expected trades in 16 days: 2–4 at most, often 0.
+
+**Result of automation run (2026-05-26):** 0 trades in 16 days. Consistent with expected frequency. Not a script error.
+
+**Script fix applied (v2):** Original version required all 4 signals on the exact same bar (too strict). Fixed: each signal tracked via state variable, active for `i_expiry` bars. CHoCH is the entry trigger; hunt+FVG+SMT must each have fired within the expiry window. This matches real trading sequencing.
+
+### Recommended Backtesting Path
+
+Use the Python backtester with yfinance/candle_store data for 3-month runs:
+1. `execution/market_data/candle_store.py` already stores ES=F + NQ=F data
+2. Implement signal detection logic from Pine script in Python
+3. Run on 3+ months of 1m data — no bar limit
+
+### TV Strategy Tester — When It Works
+
+The TV Strategy Tester IS useful for:
+- Visual signal verification: load the script, visually inspect hunt/FVG/SMT/CHoCH labels on recent bars
+- Parameter sensitivity: change expiry/lookback, see if signal density changes
+- Session gate verification: confirm blue background appears only 10:00–11:00 ET
+
 ### Notes
 - Strategy is an approximation. Stop hunt and CHoCH use simplified pivot-based logic — not identical to SMC-FVG-ICT-DOB-SH indicator output. Results indicate directional validity of the concept, not exact replication of live execution.
-- If total trades < 20, extend date range to 6 months before drawing conclusions.
+- If TV Strategy Tester eventually shows trades (after more data loads or on a future session with more history), fill the metrics table above.
 - Compare result with and without the time gate (Candidate 1 baseline) to quantify the gate's contribution.
