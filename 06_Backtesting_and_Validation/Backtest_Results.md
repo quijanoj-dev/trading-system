@@ -35,15 +35,15 @@ ES1! (primary) / NQ1! (SMT correlation)
 
 | Metric | Result |
 |--------|--------|
-| Net profit | — |
-| Profit factor | — |
-| Win rate | — |
-| Average win | — |
-| Average loss | — |
-| Expectancy (R) | — |
-| Max drawdown | — |
-| Max losing streak | — |
-| Total trades | — |
+| Net profit | $1,257.50 |
+| Profit factor | inf |
+| Win rate | 100.0% |
+| Average win | $1,257.50 |
+| Average loss | $0.00 |
+| Expectancy (R) | $1,257.50 |
+| Max drawdown | 0.00%  ($0.00) |
+| Max losing streak | 0 |
+| Total trades | 1 |
 | Avg trades / week | — |
 | Avg hold time (bars) | — |
 
@@ -71,7 +71,10 @@ The TV Strategy Tester IS useful for:
 - Parameter sensitivity: change expiry/lookback, see if signal density changes
 - Session gate verification: confirm blue background appears only 10:00–11:00 ET
 
+**Python backtest run (2026-05-26):** 60d @ 5m ES=F + NQ=F via yfinance. 1 signal generated (2026-05-20 10:25 ET, long). Signal frequency consistent with ~1 qualifying setup per 2–4 weeks under strict 4-signal confluence. **N=1 — statistically insufficient for conclusions.** Continue logging forward test setups in Forward_Test_Notes.md; revisit metrics at 30 trades.
+
 ### Notes
 - Strategy is an approximation. Stop hunt and CHoCH use simplified pivot-based logic — not identical to SMC-FVG-ICT-DOB-SH indicator output. Results indicate directional validity of the concept, not exact replication of live execution.
-- If TV Strategy Tester eventually shows trades (after more data loads or on a future session with more history), fill the metrics table above.
+- 1-trade Python backtest result (100% win rate, $1,257.50) has no statistical meaning. Expected win rate is unknown; 30+ trades needed.
 - Compare result with and without the time gate (Candidate 1 baseline) to quantify the gate's contribution.
+- Re-run `python3 -m execution.silver_bullet.run_backtest --save` monthly as new 5m data accumulates.

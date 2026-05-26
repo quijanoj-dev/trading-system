@@ -1,0 +1,234 @@
+"""
+Silver Bullet V1 — signal generator (Python port of Pine v2 logic).
+
+Rules:
+  - Session gate:  10:00–11:00 ET only
+  - Stop hunt:     ES sweeps recent low/high, closes back inside (bullish/bearish)
+  - SMT divergence: ES makes new low/high while NQ makes opposite extreme (confirmed only)
+  - FVG:           3-bar gap on ES >= fvg_min points
+  - CHoCH:         Close crosses the most recent confirmed opposite swing pivot (entry trigger)
+
+State tracking (v2 logic):
+  Each of hunt/SMT/FVG sets a flag that stays active for `expiry_bars` bars.
+  CHoCH fires the entry only when all three prior flags are active.
+"""
+
+from __future__ import annotations
+
+from datetime import time
+from typing import Optional
+
+import pandas as pd
+import pytz
+
+from execution.backtester import Signal
+
+_ET = pytz.timezone("America/New_York")
+_SESSION_START = time(10, 0)
+_SESSION_END = time(11, 0)
+
+
+def _in_session(ts: pd.Timestamp) -> bool:
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    et = ts.tz_convert(_ET)
+    t = et.time()
+    return _SESSION_START <= t < _SESSION_END
+
+
+def _check_pivot_high(highs: pd.Series, idx: int, length: int) -> Optional[float]:
+    """Return the high at idx if it is the pivot high over [idx-length, idx+length]."""
+    start = max(0, idx - length)
+    end = idx + length
+    if end >= len(highs):
+        return None
+    window = highs.iloc[start:end + 1]
+    if highs.iloc[idx] >= window.max():
+        return highs.iloc[idx]
+    return None
+
+
+def _check_pivot_low(lows: pd.Series, idx: int, length: int) -> Optional[float]:
+    """Return the low at idx if it is the pivot low over [idx-length, idx+length]."""
+    start = max(0, idx - length)
+    end = idx + length
+    if end >= len(lows):
+        return None
+    window = lows.iloc[start:end + 1]
+    if lows.iloc[idx] <= window.min():
+        return lows.iloc[idx]
+    return None
+
+
+def generate_signals(
+    es: pd.DataFrame,
+    nq: pd.DataFrame,
+    swing_length: int = 5,
+    sh_lookback: int = 20,
+    fvg_min: float = 1.0,
+    expiry_bars: int = 6,
+    r_multiple: float = 2.0,
+) -> list[Signal]:
+    """
+    Generate Silver Bullet V1 trade signals.
+
+    Args:
+        es:           5m OHLCV DataFrame for ES=F (columns: open, high, low, close, volume).
+                      DatetimeIndex must be UTC-aware, sorted ascending.
+        nq:           5m OHLCV DataFrame for NQ=F, same format.
+        swing_length: Pivot confirmation lookback/lookforward (bars each side).
+        sh_lookback:  Bars to scan for recent high/low when detecting stop hunt.
+        fvg_min:      Minimum FVG gap in points to qualify.
+        expiry_bars:  Bars each signal flag stays active after firing.
+        r_multiple:   Risk-reward multiple for target calculation.
+
+    Returns:
+        List of Signal objects, one per qualifying setup.
+    """
+    common = es.index.intersection(nq.index)
+    es = es.loc[common].copy()
+    nq = nq.loc[common].copy()
+
+    n = len(es)
+    signals: list[Signal] = []
+
+    # State flags (mirrors Pine v2 state variables)
+    bull_hunt_on = False;  bull_hunt_bar = -9999
+    bear_hunt_on = False;  bear_hunt_bar = -9999
+    bull_fvg_on  = False;  bull_fvg_bar  = -9999
+    bear_fvg_on  = False;  bear_fvg_bar  = -9999
+    bull_smt_on  = False;  bull_smt_bar  = -9999
+    bear_smt_on  = False;  bear_smt_bar  = -9999
+
+    last_ph: Optional[float] = None
+    last_pl: Optional[float] = None
+
+    min_start = max(swing_length * 2 + 1, sh_lookback + 1, 3)
+
+    for i in range(min_start, n):
+        ts = es.index[i]
+        in_sess = _in_session(ts)
+
+        # ── Expire stale flags ──────────────────────────────────────────
+        if bull_hunt_on and i - bull_hunt_bar > expiry_bars:
+            bull_hunt_on = False
+        if bear_hunt_on and i - bear_hunt_bar > expiry_bars:
+            bear_hunt_on = False
+        if bull_fvg_on and i - bull_fvg_bar > expiry_bars:
+            bull_fvg_on = False
+        if bear_fvg_on and i - bear_fvg_bar > expiry_bars:
+            bear_fvg_on = False
+        if bull_smt_on and i - bull_smt_bar > expiry_bars:
+            bull_smt_on = False
+        if bear_smt_on and i - bear_smt_bar > expiry_bars:
+            bear_smt_on = False
+
+        # ── Update pivot levels (confirmed swing_length bars ago) ───────
+        conf = i - swing_length
+        if conf >= swing_length:
+            ph = _check_pivot_high(es["high"], conf, swing_length)
+            if ph is not None:
+                last_ph = ph
+            pl = _check_pivot_low(es["low"], conf, swing_length)
+            if pl is not None:
+                last_pl = pl
+
+        if not in_sess:
+            continue
+
+        # ── Raw signal detection ────────────────────────────────────────
+        # Stop hunt
+        recent_low  = es["low"].iloc[i - sh_lookback:i].min()
+        recent_high = es["high"].iloc[i - sh_lookback:i].max()
+
+        bull_hunt_raw = es["low"].iloc[i] < recent_low and es["close"].iloc[i] > recent_low
+        bear_hunt_raw = es["high"].iloc[i] > recent_high and es["close"].iloc[i] < recent_high
+
+        if bull_hunt_raw:
+            bull_hunt_on = True;  bull_hunt_bar = i
+        if bear_hunt_raw:
+            bear_hunt_on = True;  bear_hunt_bar = i
+
+        # FVG (3-bar gap)
+        bull_fvg_raw = (
+            es["low"].iloc[i] > es["high"].iloc[i - 2]
+            and (es["low"].iloc[i] - es["high"].iloc[i - 2]) >= fvg_min
+        )
+        bear_fvg_raw = (
+            es["high"].iloc[i] < es["low"].iloc[i - 2]
+            and (es["low"].iloc[i - 2] - es["high"].iloc[i]) >= fvg_min
+        )
+
+        if bull_fvg_raw:
+            bull_fvg_on = True;  bull_fvg_bar = i
+        if bear_fvg_raw:
+            bear_fvg_on = True;  bear_fvg_bar = i
+
+        # SMT divergence (confirmed variant)
+        bull_smt_raw = (
+            es["low"].iloc[i] < es["low"].iloc[i - 1]
+            and nq["low"].iloc[i] > nq["low"].iloc[i - 1]
+        )
+        bear_smt_raw = (
+            es["high"].iloc[i] > es["high"].iloc[i - 1]
+            and nq["high"].iloc[i] < nq["high"].iloc[i - 1]
+        )
+
+        if bull_smt_raw:
+            bull_smt_on = True;  bull_smt_bar = i
+        if bear_smt_raw:
+            bear_smt_on = True;  bear_smt_bar = i
+
+        # ── CHoCH entry trigger ─────────────────────────────────────────
+        bull_choch = (
+            last_ph is not None
+            and es["close"].iloc[i] > last_ph
+            and es["close"].iloc[i - 1] <= last_ph
+        )
+        bear_choch = (
+            last_pl is not None
+            and es["close"].iloc[i] < last_pl
+            and es["close"].iloc[i - 1] >= last_pl
+        )
+
+        # ── Entry conditions ────────────────────────────────────────────
+        go_long  = bull_choch and bull_hunt_on and bull_fvg_on and bull_smt_on
+        go_short = bear_choch and bear_hunt_on and bear_fvg_on and bear_smt_on
+
+        if go_long:
+            entry = es["close"].iloc[i]
+            stop  = es["low"].iloc[i - 1]
+            if entry - stop < 0.25:  # degenerate: stop too close
+                continue
+            target = entry + (entry - stop) * r_multiple
+            signals.append(Signal(
+                timestamp=ts,
+                direction="long",
+                entry_price=entry,
+                stop_price=stop,
+                target_price=target,
+                label="SBV1-long",
+            ))
+            bull_hunt_on = False
+            bull_fvg_on  = False
+            bull_smt_on  = False
+
+        elif go_short:
+            entry = es["close"].iloc[i]
+            stop  = es["high"].iloc[i - 1]
+            if stop - entry < 0.25:
+                continue
+            target = entry - (stop - entry) * r_multiple
+            signals.append(Signal(
+                timestamp=ts,
+                direction="short",
+                entry_price=entry,
+                stop_price=stop,
+                target_price=target,
+                label="SBV1-short",
+            ))
+            bear_hunt_on = False
+            bear_fvg_on  = False
+            bear_smt_on  = False
+
+    return signals
