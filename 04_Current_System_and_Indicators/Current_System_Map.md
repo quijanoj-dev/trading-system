@@ -36,69 +36,100 @@ I execute mainly on:
 
 ## 4. Current Entry Logic
 
-*Questions to answer based on your indicator suite:*
+**Required confluence (all preferred, minimum 2-3):**
 
-- Your indicators detect SMT divergence, FVG zones, OTE fib levels, and displacement order blocks. Which of these are **entry triggers** vs. **confirmations**? In what combination?
-- Do you require SMT divergence before entering, or is a BOS/CHoCH + FVG enough?
-- Which SMT variant do you actually use for entries — the confirmed lag version or one of the zero-lag variants (NoLagGPT / RT)?
-- Do you enter at OTE fib zones, at FVG zones, at displacement OB zones, or a combination?
-- Is your entry on a limit order at a zone, or on a market order after a trigger candle?
+| Signal | Role | Indicator |
+|--------|------|-----------|
+| Stop Hunt (liquidity sweep) | Setup condition | Premarket Levels, SMC-FVG Equal H/L |
+| SMT Divergence (or any divergence) | Primary trigger | SMT-CDDO, CVD_Divergence, SMT-CDDO-NoLagGPT, SMT-CDDO-RT |
+| iFVG or FVG | Entry zone | SMC-FVG-ICT-DOB-SH |
+| CHoCH, MSS, or CISD | Structural confirmation | SMC-FVG-ICT-DOB-SH, OTE-OR-HTF-PO3 |
+
+**Entry mechanics:** Mixed
+- Limit order pre-placed at iFVG/FVG zone or OTE level when setup is clear in advance
+- Market order after trigger candle closes when price is moving aggressively (aggressive entry)
+
+**SMT variant:** Any variant that fires in confluence — no hard preference between confirmed vs. zero-lag. Resolving which to trust is an open confusion point (see §10).
+
+---
 
 ## 5. Current Exit Logic
 
-*Questions to answer:*
+**Targets (first hit wins):**
 
-- Do you use fixed tick/point targets, or do you target specific liquidity levels (Premarket Levels, session highs/lows)?
-- Do you exit on opposing SMT divergence signals?
-- Do you use trailing stops based on structure (e.g., BOS in the opposite direction)?
-- Does the OTE-OR module provide your exit targets (e.g., -1, -2 fib extensions)?
-- Is your exit logic currently mechanical or mostly discretionary?
+1. **Specific liquidity** — nearest visible pool: premarket high/low, session high/low, equal highs/lows, BSL/SSL visible on chart
+2. **Fixed R multiple** — fallback when no clear liquidity target or as partial exit
+
+No trailing stop currently. No opposing-signal exit. Exit is mechanical once target is defined at trade entry.
+
+---
 
 ## 6. Current Invalidation Logic
 
-*Questions to answer:*
+**Stop placement:** High/low of the candle immediately after the stop hunt candle.
+- Long (bullish): stop = low of the candle after the sweep low
+- Short (bearish): stop = high of the candle after the sweep high
 
-- Your SMT-CDDO indicators have built-in invalidation logic (signal fading when price breaks the divergence pivot). Is that your primary invalidation?
-- Do you invalidate based on structure (e.g., CHoCH against your trade direction from SMC indicator)?
-- Is your stop placement at a fixed distance, at the invalidation level, or at a structure level?
-- Do you have a time-based invalidation (e.g., exit if target not hit within N bars)?
+This gives tight, structure-defined risk anchored to the confirmation candle — not the sweep wick itself.
+
+**Trade invalidation triggers:**
+- Price closes back through the FVG/iFVG entry zone (imbalance fully filled without continuation)
+- Price takes out the stop candle level defined above
+- No time-based invalidation rule currently
+
+**SMT built-in invalidation:** The CDDO indicators fade divergence signals when price breaks the divergence pivot. This serves as a secondary invalidation signal but not the primary stop trigger.
+
+---
 
 ## 7. Current Session Preferences
 
-*Questions to answer (Market Session Lines marks Open 09:30, Noon 12:00, Power Hour 15:00, Close 16:00):*
+**Best windows:**
+- Silver Bullet 1: pre-open / London overlap (early morning)
+- Silver Bullet 2: 10:00–11:00 ET (post-open Silver Bullet)
 
-Best times:
-- Do you primarily trade the open (09:30-10:30)?
-- Do you trade the Silver Bullet windows (your OR module tracks 04:00-09:30)?
-- Do you trade the Power Hour (15:00-16:00)?
+**Session rules:**
+- No hard time-based avoidance — trade on signal only regardless of session
+- No maximum trade count per session
 
-Avoid:
-- Do you avoid the Noon Relax zone (12:00-14:00)?
-- Do you avoid trading before 09:30 (premarket)?
-- Do you have a max trades per session rule?
+**Note:** The OR module tracks 04:00–09:30 for overnight range context. Market Session Lines marks 09:30 open, 12:00 noon, 15:00 power hour. No explicit avoidance of noon lull or power hour.
+
+---
 
 ## 8. Current Strengths
 
-*Questions to answer:*
+- **Stop hunt + SMT divergence + iFVG confluence** setups — highest-confidence pattern: liquidity swept, divergence confirmed, imbalance provides entry zone, structure shift confirms direction
+- **Silver Bullet timing** — setups during 10:00–11:00 ET have cleaner follow-through vs. random intraday entries
+- **Precise stop placement** — anchoring stop to the candle after the sweep (not the wick) gives tight, well-defined risk with clear invalidation
+- **Multi-source divergence** — having CVD, SMT, and volume divergence available provides multiple lenses on the same price action
 
-- Which setups do you feel most confident executing?
-- Which indicator signals have been most reliable in your experience?
-- What market conditions produce your best results (trending, ranging, high-vol)?
+---
 
 ## 9. Current Weaknesses
 
-*Questions to answer:*
+**Primary leak: early entries before full confirmation.**
+- Entering on 1-2 signals (e.g., FVG + divergence) without waiting for structure confirmation (CHoCH/MSS/CISD)
+- Result: price continues against the trade before the actual setup triggers
+- Pattern: impatience at the zone, entering on the first divergence signal rather than the confirmed structure shift
 
-- Where do you lose the most — false signals, late entries, early exits, or overtrading?
-- Do you find yourself ignoring invalidation signals?
-- Are there too many indicators creating conflicting signals?
-- Is the 4-variant SMT divergence suite causing confusion about which signal to follow?
+**Secondary issues:**
+- 4 SMT variants (confirmed, NoLagGPT, RT, base) fire at slightly different times — creates uncertainty about which to act on
+- No max-trade rule means no circuit breaker after a string of early entries
+
+---
 
 ## 10. Current Sources of Confusion
 
-*Questions to answer:*
+**1. Which SMT variant to trust (confirmed vs. NoLagGPT vs. RT)**
+- All four variants can fire on the same bar or different bars
+- Zero-lag variants (NoLagGPT, RT) signal earlier but repaint risk; confirmed lags but is clean
+- No current rule for which takes priority when they disagree
 
-- Which indicator signals do you find most ambiguous or hard to interpret?
-- Do you struggle with when to use confirmed (lagging) vs. zero-lag divergence signals?
-- Is there overlap between BOS/CHoCH structure breaks and SMT divergence that creates noise?
-- Do you find it difficult to determine which FVG tier (T1/T2/T3) is worth trading?
+**2. Which structure break label matters (BOS vs. CHoCH vs. MSS vs. CISD)**
+- SMC indicator labels BOS and CHoCH; OTE-OR module tracks PO3; CISD is a separate concept
+- All are "structure shifts" but with different implications for conviction
+- No decision rule for minimum structure break required (e.g., "CHoCH minimum, prefer MSS")
+
+**3. When is confluence "enough" to enter vs. wait for more**
+- The full ideal setup (stop hunt + divergence + FVG + structure shift) is rare
+- No explicit rule for minimum confluence count — leads to inconsistent entries
+- Early entry leak (§9) is directly caused by this ambiguity
