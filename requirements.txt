@@ -5,3 +5,5 @@ pandas>=2.0
 hmmlearn>=0.3
 numpy>=1.24
 pyyaml>=6.0
+alpaca-py>=0.40
+yfinance>=0.2

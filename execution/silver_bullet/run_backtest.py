@@ -1,13 +1,23 @@
 """
 Silver Bullet V1 — Python Backtester CLI
 
-Fetches up to 60 days of 5m ES=F + NQ=F data via yfinance and runs the SBV1
-signal generator through the existing Backtester engine.
+Two data sources:
+  --source yfinance  (default) — ES=F + NQ=F futures, 5m, max 60d
+  --source alpaca               — SPY + QQQ proxies, 1m, unlimited history
+                                  Requires ALPACA_API_KEY + ALPACA_SECRET_KEY
 
 Usage:
+    # yfinance (5m, 60 days, quick check)
     python -m execution.silver_bullet.run_backtest
-    python -m execution.silver_bullet.run_backtest --period 60d --save
-    python -m execution.silver_bullet.run_backtest --fvg-min 0.5 --expiry 8
+
+    # Alpaca (1m, full history, proper backtest)
+    python -m execution.silver_bullet.run_backtest --source alpaca --start 2024-01-01
+
+    # Relaxed params (no SMT, 5m-rescaled)
+    python -m execution.silver_bullet.run_backtest --no-smt --sh-bars 4 --swing 1 --expiry 2 --fvg-min 0.25
+
+    # Save metrics to Backtest_Results.md
+    python -m execution.silver_bullet.run_backtest --source alpaca --start 2024-01-01 --save
 """
 
 from __future__ import annotations
@@ -30,25 +40,29 @@ _BACKTEST_RESULTS = (
 )
 
 
-# ─── Data fetching ────────────────────────────────────────────────────────────
+# ─── yfinance source ──────────────────────────────────────────────────────────
 
-def _fetch(symbol: str, period: str, interval: str) -> pd.DataFrame:
+def _fetch_yfinance(symbol: str, period: str, interval: str) -> pd.DataFrame:
     raw = yf.download(
         symbol, period=period, interval=interval,
         auto_adjust=True, progress=False, multi_level_index=False,
     )
     if raw.empty:
         raise RuntimeError(f"yfinance returned no data for {symbol} ({period} @ {interval})")
-
     raw.columns = [c.lower() for c in raw.columns]
-
     if raw.index.tzinfo is None:
         raw.index = raw.index.tz_localize("UTC")
     else:
         raw.index = raw.index.tz_convert("UTC")
-
     cols = [c for c in ("open", "high", "low", "close", "volume") if c in raw.columns]
     return raw[cols].sort_index()
+
+
+# ─── Alpaca source ────────────────────────────────────────────────────────────
+
+def _fetch_alpaca(symbol: str, start: str, end: str | None) -> pd.DataFrame:
+    from execution.market_data.alpaca_feed import fetch_bars
+    return fetch_bars(symbol, start=start, end=end)
 
 
 # ─── Metrics injection ────────────────────────────────────────────────────────
@@ -60,44 +74,29 @@ def _extract(metrics_str: str, label: str) -> str:
     return "—"
 
 
-def _update_results_md(metrics_str: str, n_signals: int, period: str) -> None:
+def _update_results_md(metrics_str: str, n_signals: int, source: str, label: str) -> None:
     if not _BACKTEST_RESULTS.exists():
         print(f"[warn] {_BACKTEST_RESULTS} not found — skipping save")
         return
 
     content = _BACKTEST_RESULTS.read_text()
 
-    net_profit    = _extract(metrics_str, "Net P&L")
-    profit_factor = _extract(metrics_str, "Profit Factor")
-    win_rate      = _extract(metrics_str, "Win Rate")
-    avg_win       = _extract(metrics_str, "Avg Win")
-    avg_loss      = _extract(metrics_str, "Avg Loss")
-    expectancy    = _extract(metrics_str, "Expectancy")
-    max_dd        = _extract(metrics_str, "Max Drawdown")
-    max_streak    = _extract(metrics_str, "Max Consec. Losses")
-    total_trades  = _extract(metrics_str, "Trades")
-
     replacements = {
-        r"\| Net profit \| .+ \|":        f"| Net profit | {net_profit} |",
-        r"\| Profit factor \| .+ \|":     f"| Profit factor | {profit_factor} |",
-        r"\| Win rate \| .+ \|":          f"| Win rate | {win_rate} |",
-        r"\| Average win \| .+ \|":       f"| Average win | {avg_win} |",
-        r"\| Average loss \| .+ \|":      f"| Average loss | {avg_loss} |",
-        r"\| Expectancy \(R\) \| .+ \|":  f"| Expectancy (R) | {expectancy} |",
-        r"\| Max drawdown \| .+ \|":      f"| Max drawdown | {max_dd} |",
-        r"\| Max losing streak \| .+ \|": f"| Max losing streak | {max_streak} |",
-        r"\| Total trades \| .+ \|":      f"| Total trades | {total_trades} |",
+        r"\| Net profit \| .+ \|":        f"| Net profit | {_extract(metrics_str, 'Net P&L')} |",
+        r"\| Profit factor \| .+ \|":     f"| Profit factor | {_extract(metrics_str, 'Profit Factor')} |",
+        r"\| Win rate \| .+ \|":          f"| Win rate | {_extract(metrics_str, 'Win Rate')} |",
+        r"\| Average win \| .+ \|":       f"| Average win | {_extract(metrics_str, 'Avg Win')} |",
+        r"\| Average loss \| .+ \|":      f"| Average loss | {_extract(metrics_str, 'Avg Loss')} |",
+        r"\| Expectancy \(R\) \| .+ \|":  f"| Expectancy (R) | {_extract(metrics_str, 'Expectancy')} |",
+        r"\| Max drawdown \| .+ \|":      f"| Max drawdown | {_extract(metrics_str, 'Max Drawdown')} |",
+        r"\| Max losing streak \| .+ \|": f"| Max losing streak | {_extract(metrics_str, 'Max Consec. Losses')} |",
+        r"\| Total trades \| .+ \|":      f"| Total trades | {_extract(metrics_str, 'Trades')} |",
     }
-
     for pattern, replacement in replacements.items():
         content = re.sub(pattern, replacement, content)
 
-    # Note on run parameters
-    note = (
-        f"\n**Python backtest run:** {period} @ 5m, {n_signals} signals generated. "
-        f"Data source: yfinance ES=F + NQ=F.\n"
-    )
-    if "**Python backtest run:**" not in content:
+    note = f"\n**Python backtest run ({label}):** source={source}, {n_signals} signals. "
+    if "**Python backtest run" not in content:
         content = content.replace("### Notes", note + "\n### Notes")
 
     _BACKTEST_RESULTS.write_text(content)
@@ -108,25 +107,86 @@ def _update_results_md(metrics_str: str, n_signals: int, period: str) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Silver Bullet V1 Python Backtester")
-    p.add_argument("--period",   default="60d",  help="yfinance period (max 60d for 5m)")
-    p.add_argument("--interval", default="5m",   help="yfinance interval")
-    p.add_argument("--r",        type=float, default=2.0, help="R multiple target")
-    p.add_argument("--expiry",   type=int,   default=6,   help="Signal expiry bars")
-    p.add_argument("--fvg-min",  type=float, default=1.0, help="Minimum FVG gap (points)")
-    p.add_argument("--swing",    type=int,   default=5,   help="Pivot swing length")
-    p.add_argument("--sh-bars",  type=int,   default=20,  help="Stop hunt lookback bars")
-    p.add_argument("--equity",   type=float, default=25_000.0, help="Starting equity")
-    p.add_argument("--save",     action="store_true", help="Write metrics to Backtest_Results.md")
+
+    # Data source
+    src = p.add_argument_group("Data source")
+    src.add_argument("--source",   default="yfinance", choices=["yfinance", "alpaca"],
+                     help="Data provider (default: yfinance)")
+    # yfinance options
+    src.add_argument("--period",   default="60d",  help="[yfinance] period, e.g. 60d")
+    src.add_argument("--interval", default="5m",   help="[yfinance] interval, e.g. 5m")
+    # Alpaca options
+    src.add_argument("--start",    default="2024-01-01",
+                     help="[alpaca] start date ISO, e.g. 2024-01-01")
+    src.add_argument("--end",      default=None,
+                     help="[alpaca] end date ISO (default: today)")
+    src.add_argument("--no-cache", action="store_true",
+                     help="[alpaca] bypass JSON cache, re-fetch from API")
+
+    # Signal parameters
+    sig = p.add_argument_group("Signal parameters")
+    sig.add_argument("--r",       type=float, default=2.0,  help="R multiple target (default: 2.0)")
+    sig.add_argument("--expiry",  type=int,   default=6,    help="Signal expiry bars (default: 6)")
+    sig.add_argument("--fvg-min", type=float, default=1.0,  help="Min FVG gap in points (default: 1.0)")
+    sig.add_argument("--swing",   type=int,   default=5,    help="Pivot swing length (default: 5)")
+    sig.add_argument("--sh-bars", type=int,   default=20,   help="Stop hunt lookback bars (default: 20)")
+    sig.add_argument("--no-smt",  action="store_true",      help="Drop SMT (3-signal mode: Hunt+FVG+CHoCH)")
+
+    # Risk / output
+    out = p.add_argument_group("Risk / output")
+    out.add_argument("--equity",  type=float, default=25_000.0, help="Starting equity (default: 25000)")
+    out.add_argument("--save",    action="store_true", help="Write metrics to Backtest_Results.md")
+
     args = p.parse_args()
 
-    # ── Fetch ────────────────────────────────────────────────────────────
-    print(f"Fetching ES=F ({args.period} @ {args.interval})...")
-    es = _fetch("ES=F", args.period, args.interval)
-    print(f"  {len(es):,} bars  |  {es.index[0]}  →  {es.index[-1]}")
+    # ── Fetch data ───────────────────────────────────────────────────────
+    if args.source == "alpaca":
+        # Alpaca: 1m SPY/QQQ proxies, stock risk config
+        print(f"Fetching ES=F proxy (SPY) via Alpaca | {args.start} → {args.end or 'today'} @ 1m...")
+        es = _fetch_alpaca("ES=F", args.start, args.end)
+        print(f"  {len(es):,} bars  |  {es.index[0]}  →  {es.index[-1]}")
 
-    print(f"Fetching NQ=F ({args.period} @ {args.interval})...")
-    nq = _fetch("NQ=F", args.period, args.interval)
-    print(f"  {len(nq):,} bars  |  {nq.index[0]}  →  {nq.index[-1]}")
+        print(f"Fetching NQ=F proxy (QQQ) via Alpaca | {args.start} → {args.end or 'today'} @ 1m...")
+        nq = _fetch_alpaca("NQ=F", args.start, args.end)
+        print(f"  {len(nq):,} bars  |  {nq.index[0]}  →  {nq.index[-1]}")
+
+        # Align on common timestamps
+        common = es.index.intersection(nq.index)
+        es, nq = es.loc[common], nq.loc[common]
+
+        # Stock-adjusted risk config (SPY: $1/point, 1-cent tick)
+        rc = RiskConfig(
+            risk_per_trade_pct=0.5,
+            max_position_size=100,      # shares, not contracts
+            daily_loss_limit_pct=10.0,
+            max_drawdown_pct=20.0,
+            point_value=1.0,            # 1 share × $1/point
+            tick_size=0.01,
+        )
+        max_hold = 60                   # 60 min of 1m bars = 1 session
+        source_label = f"Alpaca 1m SPY/QQQ {args.start}→{args.end or 'today'}"
+
+    else:
+        # yfinance: 5m ES=F/NQ=F futures
+        print(f"Fetching ES=F ({args.period} @ {args.interval}) via yfinance...")
+        es = _fetch_yfinance("ES=F", args.period, args.interval)
+        print(f"  {len(es):,} bars  |  {es.index[0]}  →  {es.index[-1]}")
+
+        print(f"Fetching NQ=F ({args.period} @ {args.interval}) via yfinance...")
+        nq = _fetch_yfinance("NQ=F", args.period, args.interval)
+        print(f"  {len(nq):,} bars  |  {nq.index[0]}  →  {nq.index[-1]}")
+
+        # Futures risk config (ES: $50/point, 0.25 tick)
+        rc = RiskConfig(
+            risk_per_trade_pct=0.5,
+            max_position_size=2,
+            daily_loss_limit_pct=10.0,
+            max_drawdown_pct=20.0,
+            point_value=50.0,
+            tick_size=0.25,
+        )
+        max_hold = 24                   # 2 hours of 5m bars
+        source_label = f"yfinance 5m ES=F/NQ=F {args.period}"
 
     # ── Signals ──────────────────────────────────────────────────────────
     print("\nGenerating SBV1 signals...")
@@ -137,6 +197,7 @@ def main() -> None:
         fvg_min=args.fvg_min,
         expiry_bars=args.expiry,
         r_multiple=args.r,
+        require_smt=not args.no_smt,
     )
     print(f"  Signals found: {len(signals)}")
 
@@ -151,26 +212,19 @@ def main() -> None:
             )
     else:
         print(
-            "\n  No signals — 4-signal confluence is rare in a 60-min daily window.\n"
-            "  Try --fvg-min 0.25 or --expiry 10 to relax constraints,\n"
-            "  or check that ES=F session data covers 10:00–11:00 ET bars."
+            "\n  No signals generated.\n"
+            "  Alpaca: try --no-smt --sh-bars 20 --swing 5 --expiry 6 --fvg-min 0.50\n"
+            "  yfinance: try --no-smt --sh-bars 4 --swing 1 --expiry 2 --fvg-min 0.25"
         )
         sys.exit(0)
 
     # ── Backtest ─────────────────────────────────────────────────────────
     config = BacktestConfig(
         initial_equity=args.equity,
-        risk_config=RiskConfig(
-            risk_per_trade_pct=0.5,
-            max_position_size=2,
-            daily_loss_limit_pct=10.0,   # relaxed for backtest — no daily halt
-            max_drawdown_pct=20.0,       # relaxed for backtest
-            point_value=50.0,            # ES = $50/point
-            tick_size=0.25,
-        ),
+        risk_config=rc,
         slippage_ticks=1.0,
-        commission_per_contract=2.50,
-        max_holding_bars=24,             # 2 hours of 5m bars before force-close
+        commission_per_contract=2.50 if args.source == "yfinance" else 0.0,
+        max_holding_bars=max_hold,
     )
 
     bt = Backtester(config)
@@ -193,7 +247,7 @@ def main() -> None:
             )
 
     if args.save:
-        _update_results_md(result.summary(), len(signals), args.period)
+        _update_results_md(result.summary(), len(signals), args.source, source_label)
 
 
 if __name__ == "__main__":

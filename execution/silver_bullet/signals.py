@@ -68,6 +68,7 @@ def generate_signals(
     fvg_min: float = 1.0,
     expiry_bars: int = 6,
     r_multiple: float = 2.0,
+    require_smt: bool = True,
 ) -> list[Signal]:
     """
     Generate Silver Bullet V1 trade signals.
@@ -192,8 +193,10 @@ def generate_signals(
         )
 
         # ── Entry conditions ────────────────────────────────────────────
-        go_long  = bull_choch and bull_hunt_on and bull_fvg_on and bull_smt_on
-        go_short = bear_choch and bear_hunt_on and bear_fvg_on and bear_smt_on
+        smt_ok_long  = bull_smt_on if require_smt else True
+        smt_ok_short = bear_smt_on if require_smt else True
+        go_long  = bull_choch and bull_hunt_on and bull_fvg_on and smt_ok_long
+        go_short = bear_choch and bear_hunt_on and bear_fvg_on and smt_ok_short
 
         if go_long:
             entry = es["close"].iloc[i]
