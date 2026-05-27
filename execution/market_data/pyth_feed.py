@@ -158,17 +158,6 @@ def validate_candle_store(
         # Prefer Alpaca proxy bars (same ETF as Pyth feed)
         close = _fetch_alpaca_close(proxy)
 
-        # Fallback: CandleStore (futures price — scale will differ)
-        if close is None:
-            try:
-                from execution.market_data.candle_store import CandleStore
-                store = CandleStore()
-                df = store.get_candles(sym, "1d", limit=1)
-                if not df.empty:
-                    close = float(df["close"].iloc[-1])
-            except Exception:
-                pass
-
         if close is None:
             continue
 
@@ -197,15 +186,24 @@ def validate_candle_store(
 def _fetch_alpaca_close(proxy_symbol: str) -> Optional[float]:
     """Return latest close for an Alpaca proxy symbol (SPY/QQQ). Returns None on error."""
     try:
-        from execution.market_data.alpaca_feed import fetch_bars
-        # Recent window only — avoid pulling full 1m history just for a price check
-        df = fetch_bars(proxy_symbol, start="2026-05-01", end=None)
-        if df.empty:
+        from execution.market_data.alpaca_feed import fetch_bars, _CACHE_DIR
+        try:
+            df = fetch_bars(proxy_symbol, start="2026-05-01", end=None)
+            if not df.empty:
+                return float(df["close"].iloc[-1])
+        except (EnvironmentError, Exception):
+            pass
+
+        # No API keys or fetch failed — scan cache dir for any existing file
+        pattern = f"{proxy_symbol}_*.json"
+        cached = sorted(_CACHE_DIR.glob(pattern))
+        if not cached:
             return None
-        return float(df["close"].iloc[-1])
-    except EnvironmentError:
-        # Keys not in env — caller falls back to CandleStore
-        return None
+        raw = __import__("pandas").read_json(cached[-1])
+        if raw.empty:
+            return None
+        raw.index = __import__("pandas").to_datetime(raw.index, utc=True)
+        return float(raw["close"].iloc[-1])
     except Exception:
         return None
 
