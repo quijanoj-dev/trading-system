@@ -195,6 +195,16 @@ When starting new research, check `~/Developer-Vault/03-research/` for existing 
 Search by `topic/` tags to find relevant notes from any project.
 Do not duplicate research that has already been processed and saved to the vault.
 
+## Bookmark Audit Protocol
+
+For any bookmark audit task:
+1. Create or update `context/bookmark_audits/<collection>_manifest.md` **before** visiting any URL
+2. Record every tweet as a row: Handle | Tweet URL | Status | Finding
+3. Update status inline as each tweet is visited — never batch-update at the end
+4. Manifest must survive compaction — it is the source of truth for coverage
+
+Manifests: `context/bookmark_audits/ai_trading_automation_manifest.md`, `context/bookmark_audits/ai_repos_manifest.md`
+
 ## Context Tooling (lean-ctx)
 
 Prefer lean-ctx MCP tools over native equivalents — enforced globally, required here:
