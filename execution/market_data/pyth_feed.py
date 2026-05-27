@@ -18,11 +18,12 @@ from typing import Optional
 
 _HERMES_BASE = "https://hermes.pyth.network/v2"
 
-# Pre-mapped Pyth feed IDs for CME futures (stable across versions)
-# Source: https://pyth.network/price-feeds
+# Pyth doesn't carry CME futures; use SPY/QQQ ETF oracle feeds as proxies.
+# Discovered via /v2/price_feeds?query=SPY/USD&asset_type=equity (2026-05-27).
+# Symbols: Equity.US.SPY/USD, Equity.US.QQQ/USD (regular market hours)
 _DEFAULT_IDS: dict[str, str] = {
-    "ES=F": "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",  # E-mini S&P 500
-    "NQ=F": "0x8ac0c70fff57e9aefdf5edf44b51d62c2d433653cbb2cf5cc06bb115af04d221",  # E-mini Nasdaq-100
+    "ES=F": "19e09bb805456ada3979a7d1cbb4b6d63babc3a0f8e8a9509f68afa5c4c11cd5",  # SPY proxy
+    "NQ=F": "9695e2b96ea7b3859da9ed25b7a46a920a776e2fdae19a7bcfdf2b219230452d",  # QQQ proxy
 }
 
 
@@ -56,7 +57,10 @@ class PythFeed:
         url = f"{_HERMES_BASE}{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params, doseq=True)
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        req = urllib.request.Request(url, headers={
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (compatible; trading-system/1.0)",
+        })
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read())
 
@@ -130,12 +134,12 @@ def validate_candle_store(
     symbols: Optional[list[str]] = None,
     feed: Optional[PythFeed] = None,
 ) -> list[ValidationResult]:
-    """Compare latest CandleStore candle close vs Pyth oracle price.
+    """Compare latest Alpaca proxy (SPY/QQQ) close vs Pyth oracle price.
 
-    Flags if |divergence| > threshold (default 0.3%).
-    Uses 1d candle as proxy for current price (most stable for cross-validation).
+    Pyth doesn't carry CME futures directly; both sides use the ETF proxy
+    so the price scale matches. Flags if |divergence| > threshold (default 0.3%).
+    Falls back to CandleStore if Alpaca feed unavailable.
     """
-    from execution.market_data.candle_store import CandleStore
     import time
 
     if symbols is None:
@@ -143,7 +147,6 @@ def validate_candle_store(
     if feed is None:
         feed = PythFeed()
 
-    store = CandleStore()
     now = int(time.time())
     results: list[ValidationResult] = []
 
@@ -151,12 +154,22 @@ def validate_candle_store(
 
     for sym in symbols:
         proxy = _PROXY_MAP.get(sym, sym)
-        try:
-            df = store.get_candles(sym, "1d", limit=1)
-            if df.empty:
-                continue
-            close = float(df["close"].iloc[-1])
-        except Exception:
+
+        # Prefer Alpaca proxy bars (same ETF as Pyth feed)
+        close = _fetch_alpaca_close(proxy)
+
+        # Fallback: CandleStore (futures price — scale will differ)
+        if close is None:
+            try:
+                from execution.market_data.candle_store import CandleStore
+                store = CandleStore()
+                df = store.get_candles(sym, "1d", limit=1)
+                if not df.empty:
+                    close = float(df["close"].iloc[-1])
+            except Exception:
+                pass
+
+        if close is None:
             continue
 
         pp = pyth_prices.get(sym)
@@ -179,6 +192,22 @@ def validate_candle_store(
         )
 
     return results
+
+
+def _fetch_alpaca_close(proxy_symbol: str) -> Optional[float]:
+    """Return latest close for an Alpaca proxy symbol (SPY/QQQ). Returns None on error."""
+    try:
+        from execution.market_data.alpaca_feed import fetch_bars
+        # Recent window only — avoid pulling full 1m history just for a price check
+        df = fetch_bars(proxy_symbol, start="2026-05-01", end=None)
+        if df.empty:
+            return None
+        return float(df["close"].iloc[-1])
+    except EnvironmentError:
+        # Keys not in env — caller falls back to CandleStore
+        return None
+    except Exception:
+        return None
 
 
 def _main() -> None:

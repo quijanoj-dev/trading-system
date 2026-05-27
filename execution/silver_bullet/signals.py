@@ -78,21 +78,28 @@ def generate_signals(
     r_multiple: float = 2.0,
     require_smt: bool = True,
     atr_mult: float = 0.5,
+    atr_stop_mult: float = 0.0,
 ) -> list[Signal]:
     """
     Generate Silver Bullet V1 trade signals.
 
     Args:
-        es:           5m OHLCV DataFrame for ES=F (columns: open, high, low, close, volume).
-                      DatetimeIndex must be UTC-aware, sorted ascending.
-        nq:           5m OHLCV DataFrame for NQ=F, same format.
-        swing_length: Pivot confirmation lookback/lookforward (bars each side).
-        sh_lookback:  Bars to scan for recent high/low when detecting stop hunt.
-        fvg_min:      Minimum FVG gap in points to qualify.
-        expiry_bars:  Bars each signal flag stays active after firing.
-        r_multiple:   Risk-reward multiple for target calculation.
-        atr_mult:     ATR(14) buffer added below/above the hunt-candle extreme for stop.
-                      0.0 = stop exactly at the hunt wick; 0.5 (default) = 0.5×ATR buffer.
+        es:            5m OHLCV DataFrame for ES=F (columns: open, high, low, close, volume).
+                       DatetimeIndex must be UTC-aware, sorted ascending.
+        nq:            5m OHLCV DataFrame for NQ=F, same format.
+        swing_length:  Pivot confirmation lookback/lookforward (bars each side).
+        sh_lookback:   Bars to scan for recent high/low when detecting stop hunt.
+        fvg_min:       Minimum FVG gap in points to qualify.
+        expiry_bars:   Bars each signal flag stays active after firing.
+        r_multiple:    Risk-reward multiple for target calculation.
+        atr_mult:      ATR(14) buffer added below/above the hunt-candle extreme for stop.
+                       0.0 = stop exactly at the hunt wick; 0.5 (default) = 0.5×ATR buffer.
+                       Ignored when atr_stop_mult > 0.
+        atr_stop_mult: When > 0, overrides hunt-wick stop with pure ATR stop:
+                       long  → entry - atr_stop_mult × ATR14
+                       short → entry + atr_stop_mult × ATR14
+                       Recommended value: 2.0 for 1m bars (wider, noise-resistant).
+                       Default 0.0 preserves original hunt-wick behaviour.
 
     Returns:
         List of Signal objects, one per qualifying setup.
@@ -213,8 +220,11 @@ def generate_signals(
 
         if go_long:
             entry  = es["close"].iloc[i]
-            buf    = atr_mult * atr.iloc[i] if atr_mult > 0 else 0.0
-            stop   = bull_hunt_low - buf     # structural stop: hunt-wick low minus ATR buffer
+            if atr_stop_mult > 0:
+                stop = entry - atr_stop_mult * atr.iloc[i]
+            else:
+                buf  = atr_mult * atr.iloc[i] if atr_mult > 0 else 0.0
+                stop = bull_hunt_low - buf
             risk   = entry - stop
             if risk < 0.25:
                 continue
@@ -233,8 +243,11 @@ def generate_signals(
 
         elif go_short:
             entry  = es["close"].iloc[i]
-            buf    = atr_mult * atr.iloc[i] if atr_mult > 0 else 0.0
-            stop   = bear_hunt_high + buf    # structural stop: hunt-wick high plus ATR buffer
+            if atr_stop_mult > 0:
+                stop = entry + atr_stop_mult * atr.iloc[i]
+            else:
+                buf  = atr_mult * atr.iloc[i] if atr_mult > 0 else 0.0
+                stop = bear_hunt_high + buf
             risk   = stop - entry
             if risk < 0.25:
                 continue
