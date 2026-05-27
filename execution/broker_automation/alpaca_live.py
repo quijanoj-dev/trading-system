@@ -45,7 +45,14 @@ class AlpacaLiveBroker:
                Set False only when --live flag explicitly passed.
     """
 
+    _VALID_SIDES = frozenset({"buy", "sell"})
+
     def __init__(self, paper: bool = True) -> None:
+        if not paper and os.environ.get("ALPACA_LIVE_CONFIRM") != "true":
+            raise RuntimeError(
+                "Live trading requires ALPACA_LIVE_CONFIRM=true in environment. "
+                "Set this explicitly — never from agent-generated code."
+            )
         self.paper = paper
         self._client = self._build_client()
         mode = "PAPER" if paper else "LIVE"
@@ -99,6 +106,11 @@ class AlpacaLiveBroker:
             qty:    Number of shares
             side:   "buy" or "sell"
         """
+        if side not in self._VALID_SIDES:
+            raise ValueError(f"side must be 'buy' or 'sell', got {side!r}")
+        if qty <= 0:
+            raise ValueError(f"qty must be positive, got {qty}")
+
         from alpaca.trading.requests import MarketOrderRequest
         from alpaca.trading.enums import OrderSide as AlpacaSide, TimeInForce
 
@@ -141,6 +153,11 @@ class AlpacaLiveBroker:
             target_price: Take-profit price
             limit_entry:  Entry limit price (None = market entry)
         """
+        if side not in self._VALID_SIDES:
+            raise ValueError(f"side must be 'buy' or 'sell', got {side!r}")
+        if qty <= 0:
+            raise ValueError(f"qty must be positive, got {qty}")
+
         from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, TakeProfitRequest, StopLossRequest
         from alpaca.trading.enums import OrderSide as AlpacaSide, TimeInForce, OrderClass
 
