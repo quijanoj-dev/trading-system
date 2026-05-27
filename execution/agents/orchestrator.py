@@ -39,6 +39,7 @@ from execution.agents.lead_agent import LeadAgent, StrategyPlan
 from execution.agents.researchers.academic import research_academic
 from execution.agents.researchers.web import research_web
 from execution.agents.researchers.code import research_code
+from execution.agents.researchers.alt_data import research_alt_data
 from execution.agents.synthesizer import Synthesizer
 from execution.agents.backtest_planner import BacktestPlanner
 from execution.agents.audit.validator import BacktestValidator, BacktestHalted
@@ -132,11 +133,12 @@ async def run_pipeline(
 
     # ── Phase 2: Parallel Research ───────────────────────────────────────
     if not skip_research:
-        print("\n[2/7] Research Phase — 3 agents in parallel...")
+        print("\n[2/7] Research Phase — 4 agents in parallel...")
         await asyncio.gather(
             research_academic(plan.academic_keywords, run_dir),
             research_web(plan.web_keywords, run_dir),
             research_code(plan.code_keywords, run_dir),
+            research_alt_data(plan.web_keywords, run_dir),
         )
         print("  Research complete.")
     else:
