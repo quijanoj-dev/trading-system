@@ -1,6 +1,20 @@
 # Indicator Inventory
 
-8 active indicators in `08_TradingView_Indicators/`. Last updated: 2026-03-19.
+**System:** ICT-SMC PO3-AMD — Silver Bullet V1
+**Active indicators:** 5 (after SMT consolidation). Last updated: 2026-05-27.
+
+Each indicator is tagged with the decision gate(s) it serves. See `Current_System_Map.md` for the full 6-gate framework.
+
+| # | Indicator | Gate(s) | Keep/Remove |
+|---|-----------|---------|-------------|
+| 1 | Market Session Lines | 1 | Keep |
+| 2 | Premarket Levels | 2, 5 | Keep |
+| 3 | OTE-OR-HTF-PO3 | 2, 3, 4 | Keep |
+| 4 | SMC-FVG-ICT-DOB-SH | 3, 4 | Keep |
+| 5 | SMT-CD Divergence (primary) | 3, 4 | Keep — confirmed variant only |
+| — | SMT-CDDO-Lag | — | Remove — redundant with #5 |
+| — | SMT-CDDO-NoLagGPT | — | Remove — zero-lag increases false entries |
+| — | SMT-CDDO-RT | — | Remove — redundant with #5 |
 
 ---
 
@@ -288,7 +302,7 @@ Core
 
 ---
 
-## 5. SMT-CD Divergence
+## 5. SMT-CD Divergence (Primary — Confirmed Variant)
 
 ### Category
 Divergence
@@ -357,236 +371,26 @@ Yes — discrete events with direction, grading, and invalidation state.
 ### Role in My Current System
 Core
 
-### Keep / Review / Remove
-**Review** — Most full-featured SMT variant but overlaps heavily with #6-8. Best candidate if both early and confirmed signals are valued, but highest resource usage. See consolidation recommendation below.
+### Keep / Remove
+**Keep** — Primary SMT indicator. Use confirmed variant only (asymmetric right bars, not zero-lag).
+
+**Removed variants (freeing 3 TradingView indicator slots):**
+- `SMT-CDDO-Lag` — redundant; #5 replicates all behavior
+- `SMT-CDDO-NoLagGPT` — zero-lag increases false-positive entries; violates Gate 4 confirmation requirement
+- `SMT-CDDO-RT` — zero-lag same reason; removed
+
+**Why confirmed variant only:**
+Gate 4 requires confirmed SMT divergence. Zero-lag variants (#7, #8) fire before bar confirmation — creates early entries that violate Gate 4's "NOT chasing" rule. Version_1_Decision.md explicitly chose confirmed-SMT-only for this reason.
 
 ---
 
-## 6. SMT-CDDO-Lag
-
-### Category
-Divergence
-
-### Purpose
-Variant using classic `ta.pivothigh()`/`ta.pivotlow()` with configurable right-side confirmation bars. Traditional symmetric or asymmetric pivot confirmation without real-time or early-signal mode.
-
-### What It Measures
-Same as #5: SMT inter-market divergence + CDDO+KVO Z-score oscillator divergence.
-
-### Inputs / Key Settings
-- Same 3 comparison symbols with auto ES/NQ
-- Same 3 pivot ranges: Micro, Intraday, Session
-- Separate right-bar inputs for SMT (Micro: 2, Intraday: 1, Session: 1) and CDDO (cddoRightBars: 2)
-- No early signal mode, no realtime pivot toggle
-- Signal cooldown default: 10 bars (vs 0 in #5)
-
-### Signals Produced
-Same as #5: SMT labels with stars, CDDO labels with diamond tiers, merged bubbles, invalidation fading. No [EARLY]/[CONF] distinction.
-
-### Timing Nature
-Lagging. All pivots use classic `ta.pivothigh(left, right)`. SMT Micro: 2-bar delay. Intraday: 1-bar. Session: 1-bar. CDDO: 2-bar.
-
-### Confirmation Requirement
-All pivots require right-side confirmation bars. CDDO has separate cddoRightBars setting. Same volume/ATR/extreme/cooldown filters.
-
-### Repaint Risk
-None. Classic `ta.pivothigh()/ta.pivotlow()` with right-side bars are inherently non-repainting.
-
-### Delay Risk
-Minimum 1-2 bars for all signals. CDDO: 2-bar delay. Most delayed variant.
-
-### Strengths
-- Most stable/reliable signals — zero repaint risk
-- Separate CDDO right-bar control for independent tuning
-- Higher default cooldown (10 bars) reduces noise
-- Simple mental model: all signals are confirmed pivots
-
-### Weaknesses
-- Slowest signal delivery of all four SMT variants
-- No early/fast signal option
-- 1-2 bar delay can miss optimal scalping entries on 1-minute charts
-
-### Overlap With Other Indicators
-Directly overlaps with #5, #7, #8.
-
-### Unique Value
-Cleanest zero-repaint implementation. Best for backtesting and strategy development where signal stability is paramount.
-
-### Can It Be Used in a Strategy Script?
-Yes
-
-### Can It Be Automated?
-Yes — most reliable for automation due to zero repaint.
-
-### Role in My Current System
-Optional (unless backtesting is the priority)
-
-### Keep / Review / Remove
-**Review** — Redundant with #5 (which can replicate this behavior). Keep only if used specifically for backtesting.
-
----
-
-## 7. SMT-CDDO-NoLagGPT
-
-### Category
-Divergence
-
-### Purpose
-Zero-lag variant using "CloseBreak" pivot detection — triggers when close breaks above rolling N-bar high or below rolling N-bar low. Adds enhanced SMT filtering (trend, slope, reversal break, ATR swing, cooldown, min symbol confirmations) and running-extremes pivot tracking.
-
-### What It Measures
-Same core: SMT inter-market divergence + CDDO+KVO divergence. Both SMT and CDDO pivots detected via CloseBreak rather than traditional ta.pivothigh/ta.pivotlow.
-
-### Inputs / Key Settings
-- Same symbols (NQ, YM, RTY, auto ES/NQ)
-- Same 3 pivot ranges (Micro/Intraday/Session — all ON by default)
-- Swing Trigger Mode: CloseBreak (fixed)
-- SMT Strong Filters: EMA trend, slope filter, reversal break requirement, ATR swing (0.5x ATR), cooldown (8 bars), min symbol confirmations (1)
-- Same CDDO engine with all filters
-
-### Signals Produced
-Same labels/lines/merged bubbles as #5, without [EARLY]/[CONF] staging since all signals are inherently zero-lag.
-
-### Timing Nature
-Coincident/Leading. Both SMT and CDDO pivots fire on current bar when close breaks rolling range. Zero right-side delay.
-
-### Confirmation Requirement
-CloseBreak requires bar close beyond rolling N-bar extreme. Additional filters: EMA trend, slope, reversal break, ATR swing minimum, min symbol confirmations.
-
-### Repaint Risk
-Medium. CloseBreak fires on current bar's close. With `waitForClose` ON and `barstate.isconfirmed`, signals are stable once bar closes. On realtime bars before close, signal can appear/disappear.
-
-### Delay Risk
-Zero bars after bar close. Fastest signal delivery of all four variants.
-
-### Strengths
-- Zero-lag signal delivery — optimal for 1-minute scalping
-- Enhanced SMT filtering layer reduces noise despite no right-side delay
-- Running-extremes pivot tracking avoids traditional pivot lookback
-- Highest conviction with min confirmations set to 2+ symbols
-
-### Weaknesses
-- Higher false-positive rate than lagging variants despite filters
-- Running-extremes SMT tracking is most complex pivot logic — harder to debug
-- CloseBreak can fire prematurely on volatile bars
-- Medium repaint risk on open bars
-
-### Overlap With Other Indicators
-Directly overlaps with #5, #6, #8.
-
-### Unique Value
-Only variant using CloseBreak with running-extremes tracking and enhanced SMT filters (trend, slope, reversal break, min confirmations). Most aggressive noise-filtering for zero-lag.
-
-### Can It Be Used in a Strategy Script?
-Yes — CloseBreak signals are discrete bar-close events.
-
-### Can It Be Automated?
-Yes — zero-lag signals ideal for real-time automation, though higher false-positive rate requires filter tuning.
-
-### Role in My Current System
-Core (if real-time zero-lag execution is the priority)
-
-### Keep / Review / Remove
-**Review** — Most innovative variant with strongest noise-filtering for zero-lag signals. See consolidation recommendation.
-
----
-
-## 8. SMT-CDDO-RT
-
-### Category
-Divergence
-
-### Purpose
-Real-time zero-lag variant using `ta.pivothigh(high, N, 0)` / `ta.pivotlow(low, N, 0)` (left-only, zero right bars). Adds wick rejection filter, volume Z-score filter, ATR swing filter, and per-direction cooldown maps. Simplest zero-lag approach.
-
-### What It Measures
-Same core: SMT inter-market divergence + CDDO+KVO divergence. Pivots detected with N left bars and 0 right bars.
-
-### Inputs / Key Settings
-- Same symbols (NQ, YM, RTY, auto ES/NQ)
-- 3 pivot ranges: Micro (OFF by default), Intraday (ON), Session (OFF)
-- Wick Reject Ratio (default 0.10) — requires minimum rejecting wick proportion
-- Volume Z-Score Threshold (default 0.0 = disabled)
-- Min Price Swing ATR (default 0.3x)
-- Signal Cooldown (default 8 bars, per bull/bear direction)
-
-### Signals Produced
-Same labels/lines/merged bubbles as other SMT variants. No stage distinction.
-
-### Timing Nature
-Coincident. `ta.pivothigh(high, N, 0)` fires when current bar is highest of last N+1 bars. Zero right-side delay.
-
-### Confirmation Requirement
-Left-side structure only. Filtered by wick rejection, volume Z-score, ATR swing minimum, and cooldown.
-
-### Repaint Risk
-Medium. `ta.pivothigh(src, left, 0)` evaluates on current bar. With `waitForClose` ON, gated to `barstate.isconfirmed`. Wick rejection adds validation layer. Stable on confirmed bars.
-
-### Delay Risk
-Zero bars after bar close.
-
-### Strengths
-- Simpler implementation than #7 (no running-extremes, no CloseBreak)
-- Wick rejection filter is unique noise reducer
-- Per-direction cooldown prevents signal clustering
-- Micro range defaults OFF (acknowledges noise at that scale)
-- Lighter computational footprint than #7
-
-### Weaknesses
-- Less sophisticated pivot tracking than #7
-- Wick filter may reject valid signals during strong momentum
-- Volume Z-score disabled by default (needs tuning)
-- Medium repaint risk on open bars
-
-### Overlap With Other Indicators
-Directly overlaps with #5, #6, #7.
-
-### Unique Value
-Only variant with wick rejection filtering and volume Z-score threshold. Simplest zero-lag implementation — easiest to maintain and debug.
-
-### Can It Be Used in a Strategy Script?
-Yes
-
-### Can It Be Automated?
-Yes — clean signal events with wick/volume validation.
-
-### Role in My Current System
-Core (if simplicity + zero-lag is the priority)
-
-### Keep / Review / Remove
-**Review** — Solid zero-lag variant, simpler than #7 but fewer noise filters. See consolidation recommendation.
-
----
-
-## Cross-Indicator Analysis
-
-### Redundancy Map
-
-The 4 SMT-CDDO variants (#5-#8) share ~80% identical code. They differ only in pivot detection mode and filtering:
-
-| Variant | Pivot Mode | Right-Side Delay | Unique Filters | Repaint |
-| --- | --- | --- | --- | --- |
-| #5 SMT-CD Divergence | Asymmetric right bars + optional RT | 0-2 bars | Early + Confirmed stages | Low |
-| #6 SMT-CDDO-Lag | Classic symmetric/asymmetric | 1-2 bars | Independent CDDO right bars | None |
-| #7 SMT-CDDO-NoLagGPT | CloseBreak + running extremes | 0 bars | Trend/slope/reversal/min confirms | Medium |
-| #8 SMT-CDDO-RT | ta.pivothigh(N, 0) | 0 bars | Wick reject, vol Z-score | Medium |
-
-### Consolidation Recommendation
-
-**Keep as-is:** #1 Market Session Lines, #2 Premarket Levels, #3 OTE-OR-HTF-PO3, #4 SMC-FVG-ICT-DOB-SH — all serve non-overlapping roles.
-
-**Consolidate:** #5, #6, #7, #8 — merge into a single indicator with a "Pivot Mode" dropdown (Symmetric, Asymmetric, CloseBreak, Zero-Lag) to eliminate redundancy while preserving all capabilities. This would free up 3 TradingView indicator slots.
-
-### Decision Flow Coverage
-
-| Decision Flow Step | Indicators That Support It |
-| --- | --- |
-| 1. Identify session and time of day | #1 Market Session Lines, #2 Premarket Levels |
-| 2. Determine directional bias | #3 OTE (HTF PO3), #4 SMC (BOS/CHoCH) |
-| 3. Check HTF structure/context | #3 OTE (HTF PO3), #4 SMC (ICT AMS) |
-| 4. Look for liquidity interaction/sweep | #2 Premarket Levels, #4 SMC (Stop Hunt, Equal H/L) |
-| 5. Look for divergence/confirmation | #5-8 SMT-CDDO variants |
-| 6. Wait for trigger candle/displacement | #4 SMC (Displacement OB, FVG) |
-| 7. Define invalidation | #5-8 (signal invalidation), #4 SMC (structure break) |
-| 8. Enter | #3 OTE zones, #4 FVG zones, #5-8 divergence signals |
-| 9. Manage to target/exit | #2 Premarket Levels (liquidity targets), #3 OR levels |
+## Gate Coverage Summary
+
+| Gate | Indicators |
+|------|------------|
+| 1 — CONTEXT | #1 Market Session Lines |
+| 2 — HTF BIAS | #2 Premarket Levels (PDH/PDL/PWH/PWL), #3 OTE-OR-HTF-PO3 (HTF PO3) |
+| 3 — PO3 STRUCTURE | #4 SMC-FVG-ICT-DOB-SH (Stop Hunt), #5 SMT-CD Divergence, #3 OTE-OR-HTF-PO3 |
+| 4 — LTF ENTRY | #4 SMC-FVG-ICT-DOB-SH (FVG/iFVG, CHoCH/MSS), #5 SMT-CD Divergence, #3 OTE-OR-HTF-PO3 (OTE zones) |
+| 5 — RISK | #2 Premarket Levels (TP targets), #3 OTE-OR-HTF-PO3 (OR levels) |
+| 6 — EXECUTION | No indicator — pure discipline gate |

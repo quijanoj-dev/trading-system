@@ -14,9 +14,9 @@ Decided 2026-05-26. Based on Candidate_System_Scorecard.md (4 candidates scored)
 
 ## Chosen System
 
-**Candidate 2: Silver Bullet Window Only**
+**Candidate 2: Silver Bullet Window Only (ICT-SMC PO3-AMD, 6-gate A+)**
 
-Entry only between 10:00–11:00 ET. Required confluence: stop hunt + confirmed SMT divergence (confirmed variant) + iFVG/FVG entry zone + CHoCH or MSS (CHoCH minimum). All four signals required. Stop = low/high of candle immediately after the sweep candle. Target = nearest visible liquidity pool, fallback = fixed R.
+Entry only between 10:00–11:00 ET (New York Silver Bullet window). All 6 gates required. Gate 4 (LTF ENTRY) requires all four signals: stop hunt + confirmed SMT divergence + iFVG/FVG entry zone + CHoCH or MSS (CHoCH minimum). Stop = low/high of candle immediately after the sweep candle (Gate 4 rule). RR ≥ 1:3 required (Gate 5). Target = nearest visible liquidity pool, fallback = fixed R.
 
 ## Why It Won
 

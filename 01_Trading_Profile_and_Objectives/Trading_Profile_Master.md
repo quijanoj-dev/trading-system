@@ -20,12 +20,16 @@ Higher timeframes may be used for:
 - displacement context
 
 ## 5. Trading Style
-My style is:
-- scalping / intraday trading
-- focused on high-quality setups rather than constant activity
-- interested in clear structure, timing, confirmation, and invalidation
-- interested in reducing discretion where possible
-- interested in building a strategy that can eventually be automated
+
+**Framework:** ICT-SMC PO3-AMD — 6-gate A+ checklist (see `Current_System_Map.md`)
+**System:** Silver Bullet V1 — New York session, 10:00–11:00 ET execution window
+
+Style:
+- Scalping / intraday — A+ setups only, not constant activity
+- London or New York sessions only
+- All 6 gates required before entry. Any failed gate = no trade.
+- Required RR ≥ 1:3. No exceptions.
+- Interested in reducing discretion and eventually automating a proven version
 
 ## 6. Platform Stack
 - Charting: TradingView

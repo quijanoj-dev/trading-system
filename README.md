@@ -1,12 +1,24 @@
 # Trading System
 
-ES/NQ intraday scalping system — automated pipeline from market data to signal to execution. Built for prop firm funding challenges (Apex Trader Funding) and extending into prediction markets.
+ICT-SMC PO3-AMD intraday futures trading system — ES/NQ on 1m execution, Silver Bullet V1.
+A+ setups only. 6-gate decision framework. Built for Apex Trader Funding evaluation and scaling.
 
-## Architecture
+**Primary decision doc:** `04_Current_System_and_Indicators/Current_System_Map.md`
 
-```
-Signal → Risk → Execution
-```
+## System Summary
+
+| Attribute | Value |
+|-----------|-------|
+| Markets | ES, NQ (1m execution) |
+| Session | London or New York only |
+| Framework | ICT-SMC PO3-AMD — 6-gate A+ checklist |
+| Entry window | New York Silver Bullet: 10:00–11:00 ET |
+| Signals required | All 4: stop hunt + confirmed SMT + iFVG/FVG + CHoCH/MSS |
+| Risk:Reward | ≥ 1:3 (no exceptions) |
+| Max account risk | ≤ 10% total exposure |
+| Stop | Low/high of candle immediately after sweep candle |
+
+## Platform Stack
 
 | Layer | Tool |
 |-------|------|
@@ -28,16 +40,16 @@ Signal → Risk → Execution
 execution/
   backtester.py              # OHLCV backtesting engine (slippage, commission, metrics)
   risk_manager.py            # Position sizing + circuit breakers (daily loss, max drawdown)
+  silver_bullet/             # Silver Bullet V1 signal + backtest pipeline
+  ml_signals/                # LSTM signal (walk-forward, requires 500+ bars)
+  market_data/               # Alpaca + Pyth feed, CandleStore
+  broker_automation/         # Alpaca live execution (symbol-validated, env-only keys)
+  agents/                    # Research orchestrator + 5 researchers (TradingAgents wired)
   polymarket/
     connector.py             # Polymarket CLOB API wrapper (dry-run by default)
     strategy.py              # ResolutionAmbiguity + LiquidityMispricing strategies
     bot.py                   # Autonomous market scanner + executor
-  market_data/
-    interfaces.py            # MarketDataFeed ABC + typed dataclasses
-    unusual_whales.py        # UnusualWhales client (options flow, dark pool, congressional)
   tests/
-    test_backtester.py       # 25 backtester tests
-    test_risk_manager.py     # 19 risk manager tests
 ```
 
 ## Setup
@@ -52,50 +64,45 @@ pip install openbb py-clob-client
 
 ```bash
 pytest execution/tests/
-# 44 tests, Python 3.14+, ~100s
 ```
 
 ## TradingView Indicators
 
-Pine Script v6. Load each file in TradingView Pine Editor and add to chart.
+Pine Script v6. Five active indicators, each mapped to a decision gate.
 
-- **MMT_Companion** — Asia/London/NY session ranges, fair value gaps, order blocks, liquidity pool markers
-- **CVD_Divergence** — Cumulative Volume Delta vs price divergence detection, alerts on 2+ bar divergence
-- **OI_Analysis** — OI regime: accumulation / distribution / short-covering / long-liquidation with on-chart labels
+| Indicator | Gate(s) | Purpose |
+|-----------|---------|---------|
+| Market Session Lines | 1 | Session time markers |
+| Premarket Levels | 2, 5 | Multi-TF OHLC reference + TP targets |
+| OTE-OR-HTF-PO3 | 2, 3, 4 | OTE Fibonacci + Opening Range + HTF PO3 |
+| SMC-FVG-ICT-DOB-SH | 3, 4 | BOS/CHoCH + FVG + OB + Stop Hunt |
+| SMT-CD Divergence | 3, 4 | Confirmed SMT inter-market divergence |
 
-## Backtester
-
-```python
-from execution.backtester import Backtester, BacktestConfig
-from execution.risk_manager import RiskConfig
-
-config = BacktestConfig(risk_config=RiskConfig(risk_pct=0.01))
-bt = Backtester(config)
-result = bt.run(ohlcv_df, signals)
-print(bt.summary(result))
-```
-
-## Polymarket Bot (dry-run)
+## Silver Bullet V1 Backtest
 
 ```bash
-python -m execution.polymarket.bot
-# --live flag enables real execution (requires API keys)
+cd "Trading System"
+python -m execution.silver_bullet.run_backtest --source alpaca --start 2024-01-01 --atr-stop 2.0 --save
 ```
+Results auto-saved to `06_Backtesting_and_Validation/Backtest_Results.md`.
 
 ## Environment Variables
 
 ```bash
-POLYMARKET_API_KEY=...         # Polymarket CLOB trading
+ALPACA_API_KEY=...            # Alpaca market data + live execution
+ALPACA_SECRET_KEY=...
+POLYMARKET_API_KEY=...        # Polymarket CLOB trading
 POLYMARKET_SECRET=...
-UNUSUAL_WHALES_API_KEY=...     # Options flow + dark pool (paid subscription required)
+UNUSUAL_WHALES_API_KEY=...    # Options flow + dark pool (paid subscription required)
 ```
 
 ## Knowledge Base
 
+- `Framework_Master_Index.md` — index of all framework docs, gate-to-doc mapping
 - `Framework_Working_Principles.md` — decision guardrails, system rules
-- `Framework_Master_Index.md` — index of all framework documents
-- `01_Trading_Profile_and_Objectives/` — trader profile, objectives, edge definition
-- `04_Current_System_and_Indicators/` — active indicator inventory
+- `04_Current_System_and_Indicators/Current_System_Map.md` — **6-gate A+ decision framework**
+- `Daily_Ritual.md` — pre/post session routines
+- `13_Week_Roadmap.md` — migration → backtest → Apex evaluation timeline
 
 ## Built with Claude Code
 

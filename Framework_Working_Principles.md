@@ -1,5 +1,8 @@
 # Framework Working Principles
 
+**System:** ICT-SMC PO3-AMD — Silver Bullet V1
+These principles apply to system development and refinement. For live trade decisions, see the 6-gate A+ checklist in `Current_System_Map.md`.
+
 ## 1. Plan Before Building
 For any non-trivial work, define the objective first before changing the system.
 
@@ -112,16 +115,16 @@ A failed test is still useful if the lesson is captured.
 ## 10. Do Not Confuse Research With Readiness
 A strategy being interesting is not the same as it being ready.
 
-The path should be:
-1. extract
-2. normalize
-3. compare
-4. simplify
-5. define
-6. test
-7. validate
-8. forward observe
-9. then consider automation
+The path is:
+1. Extract and normalize the concept
+2. Compare against existing validated rules
+3. Define precisely — no ambiguous conditions
+4. Test with realistic historical data
+5. Validate out-of-sample
+6. Forward observe before scaling
+7. Only then consider automation
+
+Do not add rules to the 6-gate framework without completing steps 1–4 first.
 
 ## 11. Automation Comes Last
 Do not automate a strategy that is not yet robust.
