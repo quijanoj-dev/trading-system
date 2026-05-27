@@ -1253,3 +1253,127 @@ alertcondition(fireRegBull, 'Hybrid Regular Bullish', 'Hybrid regular bullish di
 alertcondition(fireHidBull, 'Hybrid Hidden Bullish', 'Hybrid hidden bullish divergence detected')
 alertcondition(fireRegBear, 'Hybrid Regular Bearish', 'Hybrid regular bearish divergence detected')
 alertcondition(fireHidBear, 'Hybrid Hidden Bearish', 'Hybrid hidden bearish divergence detected')
+
+// ████████████████████████████████████████████████████████████████████████████
+// CISD + LIQUIDITY SNIPER — Change in State of Delivery & Equal H/L Levels
+// ICT concepts: CISD detects structural delivery flip; Liq Sniper tracks BSL/SSL
+// ████████████████████████████████████████████████████████████████████████████
+
+string CISD_GRP      = '══════ CISD + Liquidity Sniper ══════'
+bool   showCISD      = input.bool(true,  'Show CISD Labels',              group=CISD_GRP)
+bool   showLiqSniper = input.bool(true,  'Show Liquidity Levels (EQH/EQL)', group=CISD_GRP)
+int    cisdLen       = input.int(10,     'CISD Structure Length',          group=CISD_GRP, minval=3, maxval=50)
+int    liqLen        = input.int(50,     'Liquidity Lookback (bars)',      group=CISD_GRP, minval=10, maxval=200)
+float  liqATRMult    = input.float(0.15, 'Equal Level ATR Tolerance',     group=CISD_GRP, minval=0.05, maxval=1.0, step=0.05)
+int    liqMaxLines   = input.int(5,      'Max Liquidity Lines',           group=CISD_GRP, minval=1, maxval=10)
+color  cisdBullClr   = input.color(color.new(#00e5ff, 30), 'CISD ↑ Color', group=CISD_GRP)
+color  cisdBearClr   = input.color(color.new(#ff1744, 30), 'CISD ↓ Color', group=CISD_GRP)
+color  eqhClr        = input.color(color.new(#00e676, 65), 'Equal Highs (BSL)', group=CISD_GRP)
+color  eqlClr        = input.color(color.new(#ff4081, 65), 'Equal Lows (SSL)',  group=CISD_GRP)
+color  sweptClr      = input.color(color.new(#78909c, 80), 'Swept Level',       group=CISD_GRP)
+
+// ── CISD ──────────────────────────────────────────────────────────────────────
+// Bullish CISD: close breaks above highest high of last cisdLen bars (prior bar)
+// Bearish CISD: close breaks below lowest  low  of last cisdLen bars (prior bar)
+float _strHigh = ta.highest(high, cisdLen)[1]
+float _strLow  = ta.lowest(low,   cisdLen)[1]
+
+var bool _cisdBull = false
+bool newBullCISD = barstate.isconfirmed and (not _cisdBull) and (close > _strHigh)
+bool newBearCISD = barstate.isconfirmed and      _cisdBull  and (close < _strLow)
+if newBullCISD
+    _cisdBull := true
+if newBearCISD
+    _cisdBull := false
+
+if showCISD
+    if newBullCISD
+        label.new(bar_index, low - ta.atr(22) * 0.5,
+             '▲ CISD', xloc=xloc.bar_index, yloc=yloc.price,
+             color=cisdBullClr, textcolor=color.white, style=label.style_label_up, size=size.small)
+    if newBearCISD
+        label.new(bar_index, high + ta.atr(22) * 0.5,
+             '▼ CISD', xloc=xloc.bar_index, yloc=yloc.price,
+             color=cisdBearClr, textcolor=color.white, style=label.style_label_down, size=size.small)
+
+// ── LIQUIDITY SNIPER ──────────────────────────────────────────────────────────
+// Equal Highs = Buyside Liquidity (BSL)  — two highs within ATR tolerance
+// Equal Lows  = Sellside Liquidity (SSL) — two lows  within ATR tolerance
+// Swept = price crossed the level and closed beyond it (confirmation bar)
+
+type LiqLvl
+    float price
+    bool  isBuy   // true=BSL(EQH), false=SSL(EQL)
+    bool  swept
+    line  ln
+
+var array<LiqLvl> _liqArr = array.new<LiqLvl>()
+float _atr22 = ta.atr(22)
+float _liqTol = _atr22 * liqATRMult
+
+// Detect new equal highs / equal lows on confirmed bars
+if barstate.isconfirmed and showLiqSniper
+    // Equal High (BSL): current pivot high ≈ any prior high within lookback
+    float phNow = ta.pivothigh(high, 2, 2)
+    if not na(phNow)
+        for i = 3 to math.min(liqLen, bar_index - 1)
+            float priorH = high[i]
+            if math.abs(phNow - priorH) <= _liqTol
+                // Trim if at max
+                if array.size(_liqArr) >= liqMaxLines
+                    LiqLvl oldest = array.shift(_liqArr)
+                    if not na(oldest.ln)
+                        line.delete(oldest.ln)
+                line newLn = line.new(bar_index - i, priorH, bar_index, priorH,
+                     color=eqhClr, width=1, style=line.style_dashed)
+                array.push(_liqArr, LiqLvl.new(phNow, true, false, newLn))
+                break
+
+    float plNow = ta.pivotlow(low, 2, 2)
+    if not na(plNow)
+        for i = 3 to math.min(liqLen, bar_index - 1)
+            float priorL = low[i]
+            if math.abs(plNow - priorL) <= _liqTol
+                if array.size(_liqArr) >= liqMaxLines
+                    LiqLvl oldest = array.shift(_liqArr)
+                    if not na(oldest.ln)
+                        line.delete(oldest.ln)
+                line newLn = line.new(bar_index - i, priorL, bar_index, priorL,
+                     color=eqlClr, width=1, style=line.style_dashed)
+                array.push(_liqArr, LiqLvl.new(plNow, false, false, newLn))
+                break
+
+// Extend active lines and detect sweeps
+bool _bslSwept = false
+bool _sslSwept = false
+
+if array.size(_liqArr) > 0
+    for idx = array.size(_liqArr) - 1 to 0
+        LiqLvl lvl = array.get(_liqArr, idx)
+        if not lvl.swept
+            // Extend line to current bar
+            line.set_x2(lvl.ln, bar_index)
+            // Sweep detection: price pierced the level and closed back through
+            bool pierced = lvl.isBuy ? (high >= lvl.price) : (low <= lvl.price)
+            bool closedThru = lvl.isBuy ? (close < lvl.price) : (close > lvl.price)
+            if barstate.isconfirmed and pierced and closedThru
+                lvl.swept := true
+                line.set_color(lvl.ln, sweptClr)
+                if lvl.isBuy
+                    _bslSwept := true
+                    label.new(bar_index, high + _atr22 * 0.4,
+                         'BSL ✦', xloc=xloc.bar_index, yloc=yloc.price,
+                         color=color.new(bearColor, 20), textcolor=color.white,
+                         style=label.style_label_down, size=size.small)
+                else
+                    _sslSwept := true
+                    label.new(bar_index, low - _atr22 * 0.4,
+                         'SSL ✦', xloc=xloc.bar_index, yloc=yloc.price,
+                         color=color.new(bullColor, 20), textcolor=color.white,
+                         style=label.style_label_up, size=size.small)
+
+// ── Alerts ────────────────────────────────────────────────────────────────────
+alertcondition(newBullCISD,  'CISD → Bullish Delivery',    'CISD bullish flip on {{ticker}} @ {{close}}')
+alertcondition(newBearCISD,  'CISD → Bearish Delivery',    'CISD bearish flip on {{ticker}} @ {{close}}')
+alertcondition(_bslSwept,    'BSL Swept (Bearish Confirm)', 'Buyside liquidity swept on {{ticker}} — potential reversal down')
+alertcondition(_sslSwept,    'SSL Swept (Bullish Confirm)', 'Sellside liquidity swept on {{ticker}} — potential reversal up')
