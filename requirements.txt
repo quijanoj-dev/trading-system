@@ -9,3 +9,6 @@ alpaca-py>=0.40
 yfinance>=0.2
 anthropic>=0.25
 httpx>=0.27
+# TradingAgents multi-analyst researcher (requires Python >=3.12)
+# pip install tradingagents
+# tradingagents>=0.7.0

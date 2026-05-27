@@ -1,10 +1,12 @@
 """
-Research Synthesizer — merges 3 research docs into a strategy specification.
+Research Synthesizer — merges research docs into a strategy specification.
 
 Reads:
   - {run_dir}/1_academic.md
   - {run_dir}/2_web.md
+  - {run_dir}/2b_alt_data.md
   - {run_dir}/3_code.md
+  - {run_dir}/4_tradingagents.md   (optional — TradingAgents multi-analyst output)
 
 Writes:
   - {run_dir}/4_synthesis.md
@@ -44,7 +46,9 @@ class Synthesizer:
         for fname, label in [
             ("1_academic.md", "ACADEMIC RESEARCH"),
             ("2_web.md", "WEB/PRACTITIONER RESEARCH"),
+            ("2b_alt_data.md", "ALTERNATIVE DATA RESEARCH"),
             ("3_code.md", "CODE/IMPLEMENTATION RESEARCH"),
+            ("4_tradingagents.md", "TRADINGAGENTS MULTI-ANALYST"),
         ]:
             fpath = run_dir / fname
             if fpath.exists():

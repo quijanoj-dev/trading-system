@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -40,6 +41,7 @@ from execution.agents.researchers.academic import research_academic
 from execution.agents.researchers.web import research_web
 from execution.agents.researchers.code import research_code
 from execution.agents.researchers.alt_data import research_alt_data
+from execution.agents.researchers.tradingagents_researcher import research_tradingagents
 from execution.agents.synthesizer import Synthesizer
 from execution.agents.backtest_planner import BacktestPlanner
 from execution.agents.audit.validator import BacktestValidator, BacktestHalted
@@ -56,16 +58,32 @@ def _make_run_dir(slug: str) -> Path:
     return run_dir
 
 
+_ALLOWED_CMD_PREFIX = "python -m execution.silver_bullet.run_backtest"
+
+
 def _run_backtest_subprocess(cli_cmd: str, run_dir: Path) -> Optional[object]:
     """Run backtest CLI in subprocess and return BacktestResult if possible."""
+    stripped = cli_cmd.strip()
+
+    # Guard: only allow the known backtest module — prevents prompt-injection
+    # via LLM-generated plan markdown reaching shell=True subprocess.
+    if not stripped.startswith(_ALLOWED_CMD_PREFIX):
+        print(f"  [SECURITY] Rejected subprocess cmd (not allowlisted): {stripped[:80]!r}")
+        return None
+    try:
+        cmd_list = shlex.split(stripped)
+    except ValueError as e:
+        print(f"  [SECURITY] shlex parse failed: {e}")
+        return None
+    cmd_list.append("--save")
+
     print(f"\n[5/7] Running backtest...")
-    print(f"  Command: {cli_cmd}")
+    print(f"  Command: {' '.join(cmd_list)}")
 
     result_file = run_dir / "6_backtest_report.md"
-    # Run the CLI command
     proc = subprocess.run(
-        cli_cmd + " --save",
-        shell=True,
+        cmd_list,
+        shell=False,
         capture_output=True,
         text=True,
         cwd=str(_TS_ROOT),
@@ -76,7 +94,6 @@ def _run_backtest_subprocess(cli_cmd: str, run_dir: Path) -> Optional[object]:
         print(proc.stderr[-2000:] if proc.stderr else "")
 
     stdout = proc.stdout or ""
-    # Write raw output to report
     result_file.write_text(f"# Backtest Report\n\n```\n{stdout}\n```\n")
     print(f"  Backtest output: {result_file}")
     return stdout
@@ -139,6 +156,7 @@ async def run_pipeline(
             research_web(plan.web_keywords, run_dir),
             research_code(plan.code_keywords, run_dir),
             research_alt_data(plan.web_keywords, run_dir),
+            research_tradingagents(plan.web_keywords, run_dir, ticker=plan.instrument),
         )
         print("  Research complete.")
     else:

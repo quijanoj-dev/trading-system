@@ -230,5 +230,43 @@ class TestAlpacaLiveBrokerSecurity(unittest.TestCase):
         self.assertEqual(result.qty, 10)
 
 
+    # ── F4: symbol input validation ──────────────────────────────────────────
+
+    def test_symbol_validation_rejects_null_byte_injection(self):
+        """Symbol with null byte must raise ValueError — defense-in-depth before SDK call."""
+        from execution.broker_automation.alpaca_live import AlpacaLiveBroker
+        broker = AlpacaLiveBroker.__new__(AlpacaLiveBroker)
+        with self.assertRaisesRegex(ValueError, "rejected"):
+            broker.submit_market_order("SPY\x00evil", 1, "buy")
+
+    def test_symbol_validation_rejects_lowercase(self):
+        """Lowercase symbols must raise ValueError."""
+        from execution.broker_automation.alpaca_live import AlpacaLiveBroker
+        broker = AlpacaLiveBroker.__new__(AlpacaLiveBroker)
+        with self.assertRaisesRegex(ValueError, "rejected"):
+            broker.submit_market_order("spy", 1, "buy")
+
+    def test_symbol_validation_rejects_empty(self):
+        """Empty symbol must raise ValueError."""
+        from execution.broker_automation.alpaca_live import AlpacaLiveBroker
+        broker = AlpacaLiveBroker.__new__(AlpacaLiveBroker)
+        with self.assertRaisesRegex(ValueError, "rejected"):
+            broker.submit_market_order("", 1, "buy")
+
+    def test_symbol_validation_accepts_valid(self):
+        """Valid uppercase symbols must pass validation."""
+        from execution.broker_automation.alpaca_live import AlpacaLiveBroker
+        broker = AlpacaLiveBroker()
+        result = broker.submit_market_order("SPY", 1, "buy")
+        self.assertNotEqual(result.status, "error", f"Valid symbol 'SPY' failed: {result.error}")
+
+    def test_bracket_symbol_validation_rejects_injection(self):
+        """Bracket order must also reject symbol injection."""
+        from execution.broker_automation.alpaca_live import AlpacaLiveBroker
+        broker = AlpacaLiveBroker.__new__(AlpacaLiveBroker)
+        with self.assertRaisesRegex(ValueError, "rejected"):
+            broker.submit_bracket_order("SPY;rm -rf /", 1, "buy", stop_price=390.0, target_price=410.0)
+
+
 if __name__ == "__main__":
     unittest.main()

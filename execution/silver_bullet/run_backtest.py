@@ -132,6 +132,8 @@ def main() -> None:
     sig.add_argument("--sh-bars",  type=int,   default=20,   help="Stop hunt lookback bars (default: 20)")
     sig.add_argument("--atr-mult", type=float, default=0.5,
                      help="ATR(14) buffer below/above hunt-wick for stop (default: 0.5; 0=no buffer)")
+    sig.add_argument("--atr-stop", type=float, default=0.0,
+                     help="Pure ATR stop: entry ± N×ATR14 (default: 0=use hunt-wick; recommended 2.0 for 1m)")
     sig.add_argument("--no-smt",   action="store_true",      help="Drop SMT (3-signal mode: Hunt+FVG+CHoCH)")
 
     # Risk / output
@@ -167,6 +169,10 @@ def main() -> None:
         )
         max_hold = 60                   # 60 min of 1m bars = 1 session
         source_label = f"Alpaca 1m SPY/QQQ {args.start}→{args.end or 'today'}"
+        # Hunt-wick stop is too tight for 1m noise — default to 2×ATR14 unless user overrides
+        if args.atr_stop == 0.0:
+            args.atr_stop = 2.0
+            print("  [auto] 1m bars: defaulting --atr-stop 2.0 (hunt-wick stop too tight for 1m noise)")
 
     else:
         # yfinance: 5m ES=F/NQ=F futures
@@ -201,6 +207,7 @@ def main() -> None:
         r_multiple=args.r,
         require_smt=not args.no_smt,
         atr_mult=args.atr_mult,
+        atr_stop_mult=args.atr_stop,
     )
     print(f"  Signals found: {len(signals)}")
 

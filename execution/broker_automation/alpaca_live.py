@@ -18,12 +18,15 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass
 from typing import Literal, Optional
 
 logger = logging.getLogger(__name__)
 
 OrderSide = Literal["buy", "sell"]
+
+_SYMBOL_RE = re.compile(r"^[A-Z]{1,10}$")
 
 
 @dataclass
@@ -106,6 +109,8 @@ class AlpacaLiveBroker:
             qty:    Number of shares
             side:   "buy" or "sell"
         """
+        if not _SYMBOL_RE.match(symbol):
+            raise ValueError(f"symbol {symbol!r} rejected — expected 1-10 uppercase letters")
         if side not in self._VALID_SIDES:
             raise ValueError(f"side must be 'buy' or 'sell', got {side!r}")
         if qty <= 0:
@@ -153,6 +158,8 @@ class AlpacaLiveBroker:
             target_price: Take-profit price
             limit_entry:  Entry limit price (None = market entry)
         """
+        if not _SYMBOL_RE.match(symbol):
+            raise ValueError(f"symbol {symbol!r} rejected — expected 1-10 uppercase letters")
         if side not in self._VALID_SIDES:
             raise ValueError(f"side must be 'buy' or 'sell', got {side!r}")
         if qty <= 0:
