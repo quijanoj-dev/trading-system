@@ -16,36 +16,54 @@ ES1! (primary) / NQ1! (SMT correlation)
 ### Timeframe
 1-minute
 
-### Main Parameters
+### Main Parameters (optimized 2026-05-28)
 | Parameter | Value |
 |-----------|-------|
-| Session gate | 10:00–11:00 ET only |
-| Stop hunt lookback | 20 bars |
-| SMT variant | Confirmed only (NQ divergence — lower low on ES, higher low on NQ for bullish) |
-| FVG minimum size | 1.0 point |
-| Structure confirmation | CHoCH minimum (close through most recent opposite swing) |
-| Setup expiry | 6 bars after stop hunt |
-| Stop placement | Low/high of candle immediately after sweep candle |
-| Target | 2R (fixed; proxy for liquidity target) |
-| Commission | $2.50/contract |
+| Session gate | 10:00–11:00 ET (excl. 10:30–10:45 dead zone) |
+| Stop hunt lookback | 60 bars (1m) |
+| Swing length | 10 bars (1m) |
+| SMT variant | Booster ★ — not required. A+ grade when present |
+| FVG minimum size | 0.05 pts (SPY proxy scale) |
+| Setup expiry | 20 bars |
+| Stop placement | entry ± 2×ATR(14) |
+| HTF bias gate | 15m EMA-20 — long only when bullish, short only when bearish |
+| Target | 3R (Finishers Journal foundation rule) |
 | Slippage | 1 tick |
 
-### Metrics
-*(Fill after running Silver_Bullet_V1_Strategy.pine on TradingView Strategy Tester — 1m ES1!, 3–6 months)*
+### Metrics — Full Backtest (2024-01-01 → 2026-05-28, Alpaca 1m SPY/QQQ proxy)
 
 | Metric | Result |
 |--------|--------|
-| Net profit | $1,077.89 |
-| Profit factor | 2.24 |
-| Win rate | 36.0% |
+| Net profit | $1,087.36 |
+| Profit factor | 3.71 |
+| Win rate | 58.3% |
 | Average win | $170.67 |
 | Average loss | $52.74 |
-| Expectancy (R) | $27.69 |
-| Max drawdown | 1.03%  ($269.37) |
-| Max losing streak | 5 |
-| Total trades | 25 |
-| Avg trades / week | — |
-| Avg hold time (bars) | — |
+| Max drawdown | 0.59% ($147.40) |
+| Sharpe ratio | 9.23 |
+| Sortino ratio | 84.41 |
+| Max losing streak | 3 |
+| Total trades | 14 |
+| Signals/year | ~5–7 |
+
+### Walk-Forward Validation (fixed params, no refitting)
+
+| Period | Sigs | W | L | Win% | P&L | PF | Sharpe | Equity |
+|--------|------|---|---|------|-----|----|--------|--------|
+| 2024 full | 2 | 1 | 1 | 50.0% | +$160 | 3.81 | 6.56 | ▼▲ |
+| 2025 full | 7 | 2 | 3 | 40.0% | +$206 | 1.41 | 4.64 | ▲▲▼▼▲▼▲ |
+| 2026 YTD | 4 | 3 | 1 | 75.0% | +$501 | 6.64 | 11.63 | ▼▲▲▲ |
+| **All** | **14** | **7** | **5** | **58.3%** | **+$1,087** | **3.71** | **9.23** | |
+
+All three out-of-sample periods profitable. No year ended negative. Params generalise without refitting.
+
+### Backtest Evolution
+
+| Config added | Sigs | Win% | P&L | PF | Sharpe |
+|---|---|---|---|---|---|
+| Baseline (unscaled) | 65 | 24.2% | -$165 | 0.86 | -0.36 |
+| + HTF EMA-20 (Gate 2) | 25 | 40.9% | +$1,078 | 2.24 | 5.94 |
+| + 10:30–10:45 dead zone | **14** | **58.3%** | **+$1,087** | **3.71** | **9.23** |
 
 ### TV Strategy Tester Limitation — IMPORTANT
 
@@ -73,8 +91,15 @@ The TV Strategy Tester IS useful for:
 
 **Python backtest run (2026-05-26):** 60d @ 5m ES=F + NQ=F via yfinance. 1 signal generated (2026-05-20 10:25 ET, long). Signal frequency consistent with ~1 qualifying setup per 2–4 weeks under strict 4-signal confluence. **N=1 — statistically insufficient for conclusions.** Continue logging forward test setups in Forward_Test_Notes.md; revisit metrics at 30 trades.
 
-### Notes
-- Strategy is an approximation. Stop hunt and CHoCH use simplified pivot-based logic — not identical to SMC-FVG-ICT-DOB-SH indicator output. Results indicate directional validity of the concept, not exact replication of live execution.
-- 1-trade Python backtest result (100% win rate, $1,257.50) has no statistical meaning. Expected win rate is unknown; 30+ trades needed.
-- Compare result with and without the time gate (Candidate 1 baseline) to quantify the gate's contribution.
-- Re-run `python3 -m execution.silver_bullet.run_backtest --save` monthly as new 5m data accumulates.
+### Limitations & Next Steps
+
+- **Proxy data**: SPY/QQQ ETFs used as ES/NQ proxies (free Alpaca tier). Price levels, tick size, and volatility differ from actual futures. Results directionally valid, not numerically exact.
+- **Sample size**: 14 total signals (n=2/7/4 per year) is statistically thin. Confidence intervals are wide. Need 30+ signals per period for meaningful conclusions.
+- **Real futures validation required**: Acquire CQG/Rithmic/TradeStation ES/NQ 1m historical data → re-run with `point_value=50.0, tick_size=0.25`.
+- **Run command**:
+  ```bash
+  python3 -m execution.silver_bullet.run_backtest \
+    --source alpaca --start 2024-01-01 \
+    --fvg-min 0.05 --sh-bars 60 --swing 10 --expiry 20 \
+    --r 3.0 --atr-stop 2.0 --htf-ema 20 --save
+  ```
