@@ -33,7 +33,9 @@ def _compute_atr(highs: pd.Series, lows: pd.Series, closes: pd.Series, period: i
 
 _ET = pytz.timezone("America/New_York")
 _SESSION_START = time(10, 0)
-_SESSION_END = time(11, 0)
+_SESSION_END   = time(11, 0)
+_DEAD_START    = time(10, 30)  # AMD transition dead zone — 0 wins in backtest
+_DEAD_END      = time(10, 45)
 
 
 def _in_session(ts: pd.Timestamp) -> bool:
@@ -41,6 +43,8 @@ def _in_session(ts: pd.Timestamp) -> bool:
         ts = ts.tz_localize("UTC")
     et = ts.tz_convert(_ET)
     t = et.time()
+    if _DEAD_START <= t < _DEAD_END:
+        return False
     return _SESSION_START <= t < _SESSION_END
 
 
