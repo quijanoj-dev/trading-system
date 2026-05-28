@@ -79,27 +79,31 @@ def generate_signals(
     require_smt: bool = False,
     atr_mult: float = 0.5,
     atr_stop_mult: float = 0.0,
+    htf_ema_period: int = 20,
 ) -> list[Signal]:
     """
     Generate Silver Bullet V1 trade signals.
 
     Args:
-        es:            5m OHLCV DataFrame for ES=F (columns: open, high, low, close, volume).
-                       DatetimeIndex must be UTC-aware, sorted ascending.
-        nq:            5m OHLCV DataFrame for NQ=F, same format.
-        swing_length:  Pivot confirmation lookback/lookforward (bars each side).
-        sh_lookback:   Bars to scan for recent high/low when detecting stop hunt.
-        fvg_min:       Minimum FVG gap in points to qualify.
-        expiry_bars:   Bars each signal flag stays active after firing.
-        r_multiple:    Risk-reward multiple for target calculation.
-        atr_mult:      ATR(14) buffer added below/above the hunt-candle extreme for stop.
-                       0.0 = stop exactly at the hunt wick; 0.5 (default) = 0.5×ATR buffer.
-                       Ignored when atr_stop_mult > 0.
-        atr_stop_mult: When > 0, overrides hunt-wick stop with pure ATR stop:
-                       long  → entry - atr_stop_mult × ATR14
-                       short → entry + atr_stop_mult × ATR14
-                       Recommended value: 2.0 for 1m bars (wider, noise-resistant).
-                       Default 0.0 preserves original hunt-wick behaviour.
+        es:             5m OHLCV DataFrame for ES=F (columns: open, high, low, close, volume).
+                        DatetimeIndex must be UTC-aware, sorted ascending.
+        nq:             5m OHLCV DataFrame for NQ=F, same format.
+        swing_length:   Pivot confirmation lookback/lookforward (bars each side).
+        sh_lookback:    Bars to scan for recent high/low when detecting stop hunt.
+        fvg_min:        Minimum FVG gap in points to qualify.
+        expiry_bars:    Bars each signal flag stays active after firing.
+        r_multiple:     Risk-reward multiple for target calculation.
+        atr_mult:       ATR(14) buffer added below/above the hunt-candle extreme for stop.
+                        0.0 = stop exactly at the hunt wick; 0.5 (default) = 0.5×ATR buffer.
+                        Ignored when atr_stop_mult > 0.
+        atr_stop_mult:  When > 0, overrides hunt-wick stop with pure ATR stop:
+                        long  → entry - atr_stop_mult × ATR14
+                        short → entry + atr_stop_mult × ATR14
+                        Recommended value: 2.0 for 1m bars (wider, noise-resistant).
+                        Default 0.0 preserves original hunt-wick behaviour.
+        htf_ema_period: EMA period for 15m HTF bias gate (Gate 2).
+                        Long entries only when 15m close > 15m EMA; short entries only
+                        when 15m close < 15m EMA. Set to 0 to disable.
 
     Returns:
         List of Signal objects, one per qualifying setup.
@@ -109,6 +113,16 @@ def generate_signals(
     nq = nq.loc[common].copy()
 
     atr = _compute_atr(es["high"], es["low"], es["close"])
+
+    # HTF bias: resample 1m → 15m, compute EMA, forward-fill back to 1m index.
+    # htf_bullish[i] = True when 15m close > 15m EMA at bar i (long bias).
+    if htf_ema_period > 0:
+        htf = es["close"].resample("15min").last().dropna()
+        htf_ema = htf.ewm(span=htf_ema_period, adjust=False).mean()
+        htf_bull_15m = (htf > htf_ema)
+        htf_bullish = htf_bull_15m.reindex(es.index, method="ffill").fillna(False)
+    else:
+        htf_bullish = pd.Series(True, index=es.index)
 
     n = len(es)
     signals: list[Signal] = []
@@ -215,8 +229,10 @@ def generate_signals(
         # ── Entry conditions ────────────────────────────────────────────
         smt_ok_long  = bull_smt_on if require_smt else True
         smt_ok_short = bear_smt_on if require_smt else True
-        go_long  = bull_choch and bull_hunt_on and bull_fvg_on and smt_ok_long
-        go_short = bear_choch and bear_hunt_on and bear_fvg_on and smt_ok_short
+        htf_ok_long  = bool(htf_bullish.iloc[i])
+        htf_ok_short = not bool(htf_bullish.iloc[i])
+        go_long  = bull_choch and bull_hunt_on and bull_fvg_on and smt_ok_long  and htf_ok_long
+        go_short = bear_choch and bear_hunt_on and bear_fvg_on and smt_ok_short and htf_ok_short
 
         if go_long:
             entry  = es["close"].iloc[i]

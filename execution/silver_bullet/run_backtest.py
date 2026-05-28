@@ -135,6 +135,7 @@ def main() -> None:
     sig.add_argument("--atr-stop", type=float, default=0.0,
                      help="Pure ATR stop: entry ± N×ATR14 (default: 0=use hunt-wick; recommended 2.0 for 1m)")
     sig.add_argument("--smt",      action="store_true",      help="Require SMT divergence (booster-only by default per Finishers Journal)")
+    sig.add_argument("--htf-ema",  type=int,   default=20,   help="15m EMA period for HTF bias gate (0=disabled, default: 20)")
 
     # Risk / output
     out = p.add_argument_group("Risk / output")
@@ -208,6 +209,7 @@ def main() -> None:
         require_smt=args.smt,
         atr_mult=args.atr_mult,
         atr_stop_mult=args.atr_stop,
+        htf_ema_period=args.htf_ema,
     )
     print(f"  Signals found: {len(signals)}")
 
