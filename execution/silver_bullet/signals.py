@@ -120,9 +120,9 @@ def generate_signals(
         htf = es["close"].resample("15min").last().dropna()
         htf_ema = htf.ewm(span=htf_ema_period, adjust=False).mean()
         htf_bull_15m = (htf > htf_ema)
-        htf_bullish = htf_bull_15m.reindex(es.index, method="ffill").fillna(False)
+        htf_bullish: pd.Series | None = htf_bull_15m.reindex(es.index, method="ffill").fillna(False)
     else:
-        htf_bullish = pd.Series(True, index=es.index)
+        htf_bullish = None  # disabled: both directions always allowed
 
     n = len(es)
     signals: list[Signal] = []
@@ -229,8 +229,8 @@ def generate_signals(
         # ── Entry conditions ────────────────────────────────────────────
         smt_ok_long  = bull_smt_on if require_smt else True
         smt_ok_short = bear_smt_on if require_smt else True
-        htf_ok_long  = bool(htf_bullish.iloc[i])
-        htf_ok_short = not bool(htf_bullish.iloc[i])
+        htf_ok_long  = htf_bullish is None or bool(htf_bullish.iloc[i])
+        htf_ok_short = htf_bullish is None or not bool(htf_bullish.iloc[i])
         go_long  = bull_choch and bull_hunt_on and bull_fvg_on and smt_ok_long  and htf_ok_long
         go_short = bear_choch and bear_hunt_on and bear_fvg_on and smt_ok_short and htf_ok_short
 
