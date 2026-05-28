@@ -75,8 +75,8 @@ def generate_signals(
     sh_lookback: int = 20,
     fvg_min: float = 1.0,
     expiry_bars: int = 6,
-    r_multiple: float = 2.0,
-    require_smt: bool = True,
+    r_multiple: float = 3.0,
+    require_smt: bool = False,
     atr_mult: float = 0.5,
     atr_stop_mult: float = 0.0,
 ) -> list[Signal]:
@@ -229,13 +229,14 @@ def generate_signals(
             if risk < 0.25:
                 continue
             target = entry + risk * r_multiple
+            grade  = "A+" if bull_smt_on else "A"
             signals.append(Signal(
                 timestamp=ts,
                 direction="long",
                 entry_price=entry,
                 stop_price=stop,
                 target_price=target,
-                label="SBV1-long",
+                label=f"SBV1-long-{grade}",
             ))
             bull_hunt_on = False
             bull_fvg_on  = False
@@ -252,13 +253,14 @@ def generate_signals(
             if risk < 0.25:
                 continue
             target = entry - risk * r_multiple
+            grade  = "A+" if bear_smt_on else "A"
             signals.append(Signal(
                 timestamp=ts,
                 direction="short",
                 entry_price=entry,
                 stop_price=stop,
                 target_price=target,
-                label="SBV1-short",
+                label=f"SBV1-short-{grade}",
             ))
             bear_hunt_on = False
             bear_fvg_on  = False

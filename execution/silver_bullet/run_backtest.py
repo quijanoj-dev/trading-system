@@ -13,8 +13,8 @@ Usage:
     # Alpaca (1m, full history, proper backtest)
     python -m execution.silver_bullet.run_backtest --source alpaca --start 2024-01-01
 
-    # Relaxed params (no SMT, 5m-rescaled)
-    python -m execution.silver_bullet.run_backtest --no-smt --sh-bars 4 --swing 1 --expiry 2 --fvg-min 0.25
+    # Relaxed params (5m-rescaled; SMT optional by default)
+    python -m execution.silver_bullet.run_backtest --sh-bars 4 --swing 1 --expiry 2 --fvg-min 0.25
 
     # Save metrics to Backtest_Results.md
     python -m execution.silver_bullet.run_backtest --source alpaca --start 2024-01-01 --save
@@ -125,7 +125,7 @@ def main() -> None:
 
     # Signal parameters
     sig = p.add_argument_group("Signal parameters")
-    sig.add_argument("--r",        type=float, default=2.0,  help="R multiple target (default: 2.0)")
+    sig.add_argument("--r",        type=float, default=3.0,  help="R multiple target (default: 3.0 per Finishers Journal)")
     sig.add_argument("--expiry",   type=int,   default=6,    help="Signal expiry bars (default: 6)")
     sig.add_argument("--fvg-min",  type=float, default=1.0,  help="Min FVG gap in points (default: 1.0)")
     sig.add_argument("--swing",    type=int,   default=5,    help="Pivot swing length (default: 5)")
@@ -134,7 +134,7 @@ def main() -> None:
                      help="ATR(14) buffer below/above hunt-wick for stop (default: 0.5; 0=no buffer)")
     sig.add_argument("--atr-stop", type=float, default=0.0,
                      help="Pure ATR stop: entry ± N×ATR14 (default: 0=use hunt-wick; recommended 2.0 for 1m)")
-    sig.add_argument("--no-smt",   action="store_true",      help="Drop SMT (3-signal mode: Hunt+FVG+CHoCH)")
+    sig.add_argument("--smt",      action="store_true",      help="Require SMT divergence (booster-only by default per Finishers Journal)")
 
     # Risk / output
     out = p.add_argument_group("Risk / output")
@@ -205,7 +205,7 @@ def main() -> None:
         fvg_min=args.fvg_min,
         expiry_bars=args.expiry,
         r_multiple=args.r,
-        require_smt=not args.no_smt,
+        require_smt=args.smt,
         atr_mult=args.atr_mult,
         atr_stop_mult=args.atr_stop,
     )
@@ -223,8 +223,8 @@ def main() -> None:
     else:
         print(
             "\n  No signals generated.\n"
-            "  Alpaca: try --no-smt --sh-bars 20 --swing 5 --expiry 6 --fvg-min 0.50\n"
-            "  yfinance: try --no-smt --sh-bars 4 --swing 1 --expiry 2 --fvg-min 0.25"
+            "  Alpaca: try --sh-bars 20 --swing 5 --expiry 6 --fvg-min 0.50\n"
+            "  yfinance: try --sh-bars 4 --swing 1 --expiry 2 --fvg-min 0.25"
         )
         sys.exit(0)
 
