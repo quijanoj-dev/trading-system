@@ -86,7 +86,7 @@ Signals 1, 3, 4 required. Signal 2 (SMT) is a confidence booster — not a veto.
 - Long: stop = low of the sweep candle wick − 1 tick (ES) / 3 ticks (NQ).
 - Short: stop = high of the sweep candle wick + 1 tick (ES) / 3 ticks (NQ).
 - Stop at the actual invalidation level — if price returns to the sweep extreme, the setup is invalid.
-- If the sweep candle is abnormally large and the stop distance produces RR < 1:2 → skip the trade.
+- If the sweep candle is abnormally large and the stop distance produces RR < 1:3 → skip the trade.
 
 **Supporting indicators:** SMC-FVG-ICT-DOB-SH (FVG, CHoCH/MSS, Stop Hunt), SMT-CD Divergence (confirmed SMT), OTE-OR-HTF-PO3 (OTE entry zones)
 
@@ -101,7 +101,7 @@ Signals 1, 3, 4 required. Signal 2 (SMT) is a confidence booster — not a veto.
 |-------|------|
 | Stop loss | Sweep candle extreme ± ticks (Gate 4 rule). |
 | Take profit | Nearest visible liquidity pool (premarket H/L, session H/L, equal H/L, BSL/SSL), fallback = fixed R. |
-| Risk : Reward | ≥ 1:2. If nearest liquidity pool does not offer 2R from entry, do not take the trade. |
+| Risk : Reward | ≥ 1:3. If nearest liquidity pool does not offer 3R from entry, do not take the trade. |
 | Risk per trade | 0.5–1.5% of account equity. ★★★ setup = 1.5%. ★★ setup = 0.5–1%. Never more than 1.5%. |
 | Daily loss limit | Hard stop — pre-programmed in broker. Do not override manually. |
 
