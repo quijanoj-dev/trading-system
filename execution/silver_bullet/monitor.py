@@ -39,6 +39,7 @@ from execution.silver_bullet.signals import (
     _DEAD_START,
     _DEAD_END,
 )
+from execution.silver_bullet.executor import submit_paper_order
 
 # ── Final validated SBV1 params (Alpaca 1m SPY/QQQ scale) ────────────────────
 
@@ -250,6 +251,7 @@ def _run(poll_interval: int, lookback_bars: int) -> None:
             seen.add(sig.timestamp)
             grade = "A+" if "A+" in sig.label else "A"
             _log_signal(sig, grade)
+            submit_paper_order(sig, grade)
 
         time.sleep(poll_interval)
 
