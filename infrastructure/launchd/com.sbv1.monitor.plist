@@ -19,7 +19,7 @@
     <array>
         <string>/bin/zsh</string>
         <string>-c</string>
-        <string>source ~/.zshenv 2>/dev/null; source ~/.zprofile 2>/dev/null; cd '/Users/apple/Library/CloudStorage/Dropbox/PC JuanK/Work/AI Projects/Trading System' &amp;&amp; python3 -m execution.silver_bullet.monitor</string>
+        <string>source ~/.zshenv 2>/dev/null; source ~/.zprofile 2>/dev/null; cd '/Users/apple/Library/CloudStorage/Dropbox/PC JuanK/Work/AI Projects/Trading System' &amp;&amp; caffeinate -i python3 -m execution.silver_bullet.monitor</string>
     </array>
 
     <!-- ALPACA_API_KEY and ALPACA_SECRET_KEY must be exported in ~/.zshenv -->
