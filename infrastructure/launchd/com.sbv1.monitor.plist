@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sbv1.monitor</string>
+
+    <!-- Fires at 08:55 local time (= 09:55 ET when Mac is set to CT/CDT).
+         Adjust Hour if your Mac clock is in a different timezone. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>55</integer>
+    </dict>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>source ~/.zshenv 2>/dev/null; source ~/.zprofile 2>/dev/null; cd '/Users/apple/Library/CloudStorage/Dropbox/PC JuanK/Work/AI Projects/Trading System' &amp;&amp; python3 -m execution.silver_bullet.monitor</string>
+    </array>
+
+    <!-- ALPACA_API_KEY and ALPACA_SECRET_KEY must be exported in ~/.zshenv -->
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/sbv1_monitor.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/sbv1_monitor.err</string>
+</dict>
+</plist>
