@@ -32,7 +32,7 @@ _FORWARD_TEST = _TS_ROOT / "Forward_Test_Notes.md"
 _RISK_PCT = {"A+": 0.010, "A": 0.005}  # 1.0% A+, 0.5% A
 
 # SPY short not supported via simple short on free paper tier — use inverse note
-_ALLOW_SHORTS = False  # set True if margin enabled on paper account
+_ALLOW_SHORTS = True  # shorting_enabled confirmed on paper account
 
 
 @dataclass
