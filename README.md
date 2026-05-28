@@ -13,10 +13,10 @@ A+ setups only. 6-gate decision framework. Built for Apex Trader Funding evaluat
 | Session | London or New York only |
 | Framework | ICT-SMC PO3-AMD — 6-gate A+ checklist |
 | Entry window | New York Silver Bullet: 10:00–11:00 ET |
-| Signals required | All 4: stop hunt + confirmed SMT + iFVG/FVG + CHoCH/MSS |
-| Risk:Reward | ≥ 1:3 (no exceptions) |
-| Max account risk | ≤ 10% total exposure |
-| Stop | Low/high of candle immediately after sweep candle |
+| Signals required | 3 required: stop hunt + iFVG/FVG + CHoCH/MSS. SMT divergence = booster (★★★ when present) |
+| Risk:Reward | ≥ 1:2 (min). Backtest to validate optimal threshold. |
+| Risk per trade | 0.5–1.5% equity (★★★ = 1.5%, ★★ = 0.5–1%) |
+| Stop | Extreme of sweep candle wick ± 1 tick (ES) / 3 ticks (NQ) |
 
 ## Platform Stack
 

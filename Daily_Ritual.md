@@ -44,7 +44,7 @@
 
 ### 6. Execution Readiness (5 min)
 - [ ] 6-gate A+ checklist visible (`Current_System_Map.md`)
-- [ ] Risk rules reviewed (RR ≥ 1:3, max exposure ≤ 10%)
+- [ ] Risk rules reviewed (RR ≥ 1:2, per-trade risk 0.5–1.5% equity)
 - [ ] "No trade" is an acceptable outcome today
 
 ### 7. Focus of the Day (1 min)
@@ -97,8 +97,8 @@ Current phase:
 
 ## Non-Negotiable Rules
 
-1. **A+ setups only.** If any gate fails → no trade.
+1. **A+ setups only.** If gates 1+2+3+4(required)+5+6 fail → no trade.
 2. **Capital protection first.** Daily loss limits are final. No revenge trading.
-3. **RR ≥ 1:3.** No exception.
+3. **RR ≥ 1:2.** Risk per trade = 0.5–1.5% equity. Never more.
 4. **Journal everything.** Trades. No-trades. Emotions. Mistakes.
 5. **"No setup is better than a forced setup."**

@@ -1,8 +1,8 @@
 # Current System Map
 
 **System:** ICT-SMC PO3-AMD (Accumulation-Manipulation-Distribution)
-**Version:** Silver Bullet V1
-**Last updated:** 2026-05-27
+**Version:** Silver Bullet V1.1 (council-reviewed 2026-05-28)
+**Last updated:** 2026-05-28
 
 ---
 
@@ -34,8 +34,8 @@ If ANY gate fails → **NO TRADE**. Journal only.
 |-------|------|
 | HTF POI identified | PDH/PDL, PWH/PWL, or Swing H/L marked on chart. |
 | Directional bias | Clear directional bias OR clear range context established. |
-| Price proximity | Price is near a HTF Point of Interest. |
-| Narrative coherent | Expectation makes sense (know where price wants to go). |
+| Price proximity | Price is within 10 ES points (30 NQ points) of a named HTF level. Not "near" — must be at a specific level. |
+| Target coherent | A logical draw on liquidity exists on the other side (BSL/SSL or prior HTF level visible). |
 
 **Supporting indicators:** Premarket Levels (PDH/PDL/PWH/PWL), OTE-OR-HTF-PO3 (HTF PO3 visualization)
 
@@ -50,7 +50,7 @@ If ANY gate fails → **NO TRADE**. Journal only.
 |-------|-----------|
 | Accumulation | Price compressing / ranging — visible consolidation. |
 | Manipulation | Liquidity grab confirmed: stop hunt past prior H/L, OR SMT divergence between ES/NQ, OR turtle soup / CVD divergence. Long-body candle with FVG or price over-extended to EMA qualifies. |
-| Distribution intent | Direction is clear after manipulation. Price shows intent to expand away from the sweep. |
+| Distribution intent | 1m candle closes beyond the FVG created by the sweep displacement, AND the FVG is not yet fully mitigated. This is the distribution trigger — not a subjective "looks like it's going." |
 
 All three phases must be identifiable on the 1m chart. Manipulation confirmation is required before any entry attempt.
 
@@ -63,14 +63,19 @@ All three phases must be identifiable on the 1m chart. Manipulation confirmation
 ### Gate 4 — LTF ENTRY GATE
 *Is this a textbook A+ execution?*
 
-All four signals required. Missing one = NO TRADE.
+Signals 1, 3, 4 required. Signal 2 (SMT) is a confidence booster — not a veto.
 
-| Signal | Requirement |
-|--------|-------------|
-| 1. Stop hunt | Liquidity sweep of prior high/low confirmed on 1m. |
-| 2. SMT divergence | ES and NQ diverge at the sweep point (confirmed SMT variant — not zero-lag). |
-| 3. iFVG or FVG | Entry zone present in the reversal area. |
-| 4. CHoCH or MSS | Market structure shift confirmed on 1m (minimum CHoCH, prefer MSS). CHoCH = 1m close above/below most recent opposing swing, not just a wick through. |
+| Signal | Status | Requirement |
+|--------|--------|-------------|
+| 1. Stop hunt | **Required** | Liquidity sweep of prior high/low confirmed on 1m. |
+| 2. SMT divergence | **Booster** ★ | ES and NQ diverge at the sweep point (confirmed variant — not zero-lag). Present = A+ trade. Absent (ES+NQ swept together) = valid trade, lower conviction. |
+| 3. iFVG or FVG | **Required** | Entry zone present in the reversal area. |
+| 4. CHoCH or MSS | **Required** | Market structure shift confirmed on 1m (minimum CHoCH, prefer MSS). CHoCH = 1m close above/below most recent opposing swing, not just a wick through. |
+
+**Setup grading:**
+- Signals 1 + 3 + 4 + SMT present → ★★★ A+ (max size)
+- Signals 1 + 3 + 4, no SMT → ★★ A (normal size)
+- Fewer than 3 required signals → NO TRADE
 
 **Entry mechanics:**
 - Entry is NOT chasing: price must come to the level (FVG/iFVG or OTE zone), not market-order into momentum.
@@ -78,13 +83,14 @@ All four signals required. Missing one = NO TRADE.
 - Market order only after confirmed CHoCH/MSS candle close (no anticipatory entry).
 
 **Stop placement:**
-- Long: stop = low of the candle immediately after the sweep candle.
-- Short: stop = high of the candle immediately after the sweep candle.
-- Stop anchored to the confirmation candle structure, not the sweep wick itself.
+- Long: stop = low of the sweep candle wick − 1 tick (ES) / 3 ticks (NQ).
+- Short: stop = high of the sweep candle wick + 1 tick (ES) / 3 ticks (NQ).
+- Stop at the actual invalidation level — if price returns to the sweep extreme, the setup is invalid.
+- If the sweep candle is abnormally large and the stop distance produces RR < 1:2 → skip the trade.
 
 **Supporting indicators:** SMC-FVG-ICT-DOB-SH (FVG, CHoCH/MSS, Stop Hunt), SMT-CD Divergence (confirmed SMT), OTE-OR-HTF-PO3 (OTE entry zones)
 
-**IF all four signals present AND entry is at level → Gate 5. ELSE → NO TRADE.**
+**IF signals 1 + 3 + 4 present AND entry is at level → Gate 5. ELSE → NO TRADE.**
 
 ---
 
@@ -93,11 +99,11 @@ All four signals required. Missing one = NO TRADE.
 
 | Check | Rule |
 |-------|------|
-| Stop loss | Logical, predefined — candle after sweep (Gate 4 rule). |
-| Take profit | Logical, predefined — nearest visible liquidity pool (premarket H/L, session H/L, equal H/L, BSL/SSL), fallback = fixed R. |
-| Risk : Reward | ≥ 1:3. If the visible target does not offer at least 3R, do not take the trade. |
-| Position size | Respects account rules. |
-| Max exposure | Total account risk ≤ 10% at any time. |
+| Stop loss | Sweep candle extreme ± ticks (Gate 4 rule). |
+| Take profit | Nearest visible liquidity pool (premarket H/L, session H/L, equal H/L, BSL/SSL), fallback = fixed R. |
+| Risk : Reward | ≥ 1:2. If nearest liquidity pool does not offer 2R from entry, do not take the trade. |
+| Risk per trade | 0.5–1.5% of account equity. ★★★ setup = 1.5%. ★★ setup = 0.5–1%. Never more than 1.5%. |
+| Daily loss limit | Hard stop — pre-programmed in broker. Do not override manually. |
 
 **Supporting indicators:** Premarket Levels (TP targets), OTE-OR-HTF-PO3 (OR levels as targets)
 
