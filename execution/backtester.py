@@ -52,6 +52,7 @@ class Signal:
     stop_price: float                # Invalidation / stop-loss level
     target_price: float              # Take-profit level
     label: str = ""                  # Optional tag (e.g. strategy name, setup type)
+    fvg_mid: float = 0.0             # FVG zone midpoint — limit price for entry
 
 
 @dataclass

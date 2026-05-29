@@ -134,8 +134,8 @@ def generate_signals(
     # State flags (mirrors Pine v2 state variables)
     bull_hunt_on  = False;  bull_hunt_bar  = -9999;  bull_hunt_low  = 0.0
     bear_hunt_on  = False;  bear_hunt_bar  = -9999;  bear_hunt_high = 0.0
-    bull_fvg_on  = False;  bull_fvg_bar  = -9999
-    bear_fvg_on  = False;  bear_fvg_bar  = -9999
+    bull_fvg_on  = False;  bull_fvg_bar  = -9999;  bull_fvg_mid = 0.0
+    bear_fvg_on  = False;  bear_fvg_bar  = -9999;  bear_fvg_mid = 0.0
     bull_smt_on  = False;  bull_smt_bar  = -9999
     bear_smt_on  = False;  bear_smt_bar  = -9999
 
@@ -200,8 +200,10 @@ def generate_signals(
 
         if bull_fvg_raw:
             bull_fvg_on = True;  bull_fvg_bar = i
+            bull_fvg_mid = (es["low"].iloc[i] + es["high"].iloc[i - 2]) / 2.0
         if bear_fvg_raw:
             bear_fvg_on = True;  bear_fvg_bar = i
+            bear_fvg_mid = (es["high"].iloc[i] + es["low"].iloc[i - 2]) / 2.0
 
         # SMT divergence (confirmed variant)
         bull_smt_raw = (
@@ -257,6 +259,7 @@ def generate_signals(
                 stop_price=stop,
                 target_price=target,
                 label=f"SBV1-long-{grade}",
+                fvg_mid=bull_fvg_mid,
             ))
             bull_hunt_on = False
             bull_fvg_on  = False
@@ -281,6 +284,7 @@ def generate_signals(
                 stop_price=stop,
                 target_price=target,
                 label=f"SBV1-short-{grade}",
+                fvg_mid=bear_fvg_mid,
             ))
             bear_hunt_on = False
             bear_fvg_on  = False
