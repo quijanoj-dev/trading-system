@@ -55,6 +55,7 @@ _PARAMS = dict(
     atr_stop_mult=2.0,
     htf_ema_period=20,
     po3_gate=True,
+    ifvg=True,
 )
 
 _TS_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -216,6 +217,41 @@ def _log_signal(sig, grade: str) -> None:
     print(f"  Logged → {_FORWARD_TEST.name}", flush=True)
 
 
+# ── Monte Carlo regime gate ───────────────────────────────────────────────────
+
+def _markov_gate_ok(sig, spy: pd.DataFrame, qqq: pd.DataFrame) -> bool:
+    """Monte Carlo regime gate. Fails open — any exception allows the trade."""
+    try:
+        from execution.ml_signals.markov_signal import MarkovSignal
+
+        def _norm(closes):
+            mn, mx = min(closes), max(closes)
+            if mx == mn:
+                return [0.5] * len(closes)
+            return [(p - mn) / (mx - mn) for p in closes]
+
+        spy_c = spy["close"].values.flatten().tolist()
+        qqq_c = qqq["close"].values.flatten().tolist()
+
+        spy_r = MarkovSignal(n_states=10, n_sims=5_000).fit(_norm(spy_c)).predict(_norm(spy_c)[-1], days_forward=5)
+        qqq_r = MarkovSignal(n_states=10, n_sims=5_000).fit(_norm(qqq_c)).predict(_norm(qqq_c)[-1], days_forward=5)
+
+        print(
+            f"  [MC gate] SPY={spy_r.regime_label}(↑{spy_r.p_up:.0%}) "
+            f"NQ={qqq_r.regime_label}(↑{qqq_r.p_up:.0%})",
+            flush=True,
+        )
+
+        if sig.direction == "long":
+            return spy_r.regime_label in ("bullish", "ranging") and qqq_r.regime_label in ("bullish", "ranging")
+        else:
+            return spy_r.regime_label in ("bearish", "ranging") and qqq_r.regime_label in ("bearish", "ranging")
+
+    except Exception as exc:
+        print(f"  [MC gate error: {exc}] — allowing trade", flush=True)
+        return True
+
+
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 def _run(poll_interval: int, lookback_bars: int, atr_threshold: float) -> None:
@@ -311,6 +347,12 @@ def _run(poll_interval: int, lookback_bars: int, atr_threshold: float) -> None:
             seen.add(sig.timestamp)
             grade = "A+" if "A+" in sig.label else "A"
             _log_signal(sig, grade)
+
+            # ── Monte Carlo regime gate ───────────────────────────────────
+            if not _markov_gate_ok(sig, spy, qqq):
+                print(f"  [MC gate REJECT] regime not aligned — order skipped", flush=True)
+                continue
+
             submit_paper_order(sig, grade)
 
         time.sleep(poll_interval)

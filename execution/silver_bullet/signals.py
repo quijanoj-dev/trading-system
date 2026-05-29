@@ -85,6 +85,7 @@ def generate_signals(
     atr_stop_mult: float = 0.0,
     htf_ema_period: int = 20,
     po3_gate: bool = True,
+    ifvg: bool = True,
 ) -> list[Signal]:
     """
     Generate Silver Bullet V1 trade signals.
@@ -113,6 +114,9 @@ def generate_signals(
                         entry_price < 15m candle open (price still in discount/manipulation
                         zone); short entries require entry_price > 15m candle open.
                         Disabled when htf_ema_period == 0 (no 15m context available).
+        ifvg:           When True, a mitigated prior FVG (iFVG) can substitute for a fresh
+                        FVG. A bullish FVG that price has since traded through inverts and
+                        acts as resistance (bearish iFVG), and vice versa.
 
     Returns:
         List of Signal objects, one per qualifying setup.
@@ -151,6 +155,12 @@ def generate_signals(
     bull_smt_on  = False;  bull_smt_bar  = -9999
     bear_smt_on  = False;  bear_smt_bar  = -9999
 
+    # iFVG state — prior FVG zones awaiting mitigation
+    prior_bull_fvg_zones: list[tuple[float, float]] = []  # (zone_high=low[i], zone_low=high[i-2])
+    prior_bear_fvg_zones: list[tuple[float, float]] = []  # (zone_high=high[i], zone_low=low[i-2])
+    bull_ifvg_on = False;  bull_ifvg_bar = -9999;  bull_ifvg_mid = 0.0
+    bear_ifvg_on = False;  bear_ifvg_bar = -9999;  bear_ifvg_mid = 0.0
+
     last_ph: Optional[float] = None
     last_pl: Optional[float] = None
 
@@ -173,6 +183,10 @@ def generate_signals(
             bull_smt_on = False
         if bear_smt_on and i - bear_smt_bar > expiry_bars:
             bear_smt_on = False
+        if bull_ifvg_on and i - bull_ifvg_bar > expiry_bars:
+            bull_ifvg_on = False
+        if bear_ifvg_on and i - bear_ifvg_bar > expiry_bars:
+            bear_ifvg_on = False
 
         # ── Update pivot levels (confirmed swing_length bars ago) ───────
         conf = i - swing_length
@@ -213,9 +227,26 @@ def generate_signals(
         if bull_fvg_raw:
             bull_fvg_on = True;  bull_fvg_bar = i
             bull_fvg_mid = (es["low"].iloc[i] + es["high"].iloc[i - 2]) / 2.0
+            prior_bull_fvg_zones.append((es["low"].iloc[i], es["high"].iloc[i - 2]))
         if bear_fvg_raw:
             bear_fvg_on = True;  bear_fvg_bar = i
             bear_fvg_mid = (es["high"].iloc[i] + es["low"].iloc[i - 2]) / 2.0
+            prior_bear_fvg_zones.append((es["high"].iloc[i], es["low"].iloc[i - 2]))
+
+        # iFVG mitigation: price trades through a prior FVG zone → zone inverts
+        if ifvg:
+            for zone_high, zone_low in prior_bull_fvg_zones:
+                if es["low"].iloc[i] < zone_low:
+                    bull_ifvg_on = True;  bull_ifvg_bar = i
+                    bull_ifvg_mid = (zone_high + zone_low) / 2.0
+                    prior_bull_fvg_zones.clear()
+                    break
+            for zone_high, zone_low in prior_bear_fvg_zones:
+                if es["high"].iloc[i] > zone_high:
+                    bear_ifvg_on = True;  bear_ifvg_bar = i
+                    bear_ifvg_mid = (zone_high + zone_low) / 2.0
+                    prior_bear_fvg_zones.clear()
+                    break
 
         # SMT divergence (confirmed variant)
         bull_smt_raw = (
@@ -270,8 +301,10 @@ def generate_signals(
             po3_ok_long  = True
             po3_ok_short = True
 
-        go_long  = bull_choch and bull_hunt_on and bull_fvg_on and smt_ok_long  and htf_ok_long  and po3_ok_long
-        go_short = bear_choch and bear_hunt_on and bear_fvg_on and smt_ok_short and htf_ok_short and po3_ok_short
+        bull_fvg_or_ifvg = bull_fvg_on or (ifvg and bull_ifvg_on)
+        bear_fvg_or_ifvg = bear_fvg_on or (ifvg and bear_ifvg_on)
+        go_long  = bull_choch and bull_hunt_on and bull_fvg_or_ifvg and smt_ok_long  and htf_ok_long  and po3_ok_long
+        go_short = bear_choch and bear_hunt_on and bear_fvg_or_ifvg and smt_ok_short and htf_ok_short and po3_ok_short
 
         if go_long:
             entry  = es["close"].iloc[i]
@@ -285,6 +318,7 @@ def generate_signals(
                 continue
             target = entry + risk * r_multiple
             grade  = "A+" if bull_smt_on else "A"
+            fvg_mid_long = bull_fvg_mid if bull_fvg_on else bull_ifvg_mid
             signals.append(Signal(
                 timestamp=ts,
                 direction="long",
@@ -292,11 +326,13 @@ def generate_signals(
                 stop_price=stop,
                 target_price=target,
                 label=f"SBV1-long-{grade}",
-                fvg_mid=bull_fvg_mid,
+                fvg_mid=fvg_mid_long,
             ))
             bull_hunt_on = False
             bull_fvg_on  = False
             bull_smt_on  = False
+            bull_ifvg_on = False
+            prior_bull_fvg_zones.clear()
 
         elif go_short:
             entry  = es["close"].iloc[i]
@@ -310,6 +346,7 @@ def generate_signals(
                 continue
             target = entry - risk * r_multiple
             grade  = "A+" if bear_smt_on else "A"
+            fvg_mid_short = bear_fvg_mid if bear_fvg_on else bear_ifvg_mid
             signals.append(Signal(
                 timestamp=ts,
                 direction="short",
@@ -317,10 +354,12 @@ def generate_signals(
                 stop_price=stop,
                 target_price=target,
                 label=f"SBV1-short-{grade}",
-                fvg_mid=bear_fvg_mid,
+                fvg_mid=fvg_mid_short,
             ))
             bear_hunt_on = False
             bear_fvg_on  = False
             bear_smt_on  = False
+            bear_ifvg_on = False
+            prior_bear_fvg_zones.clear()
 
     return signals
