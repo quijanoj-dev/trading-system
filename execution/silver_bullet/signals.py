@@ -165,13 +165,16 @@ def generate_signals(
         _ema13  = closes_2m.ewm(span=13,  adjust=False).mean()
         _ema48  = closes_2m.ewm(span=48,  adjust=False).mean()
         _ema200 = closes_2m.ewm(span=200, adjust=False).mean()
-        _fan_spread = (_ema13 - _ema200).abs()
-        # braided when spread < 0.2% of ema200
-        _fan_braided_2m: pd.Series = _fan_spread < (_ema200 * 0.002)
-        # forward-fill 2m signal onto 1m index
-        fan_braided: pd.Series = _fan_braided_2m.reindex(es.index, method="ffill").fillna(True)
+        # Bullish fan: EMAs aligned ascending (13>48>200) — allow longs
+        # Bearish fan: EMAs aligned descending (13<48<200) — allow shorts
+        # Braided (any other order) — skip both
+        _bull_fan_2m: pd.Series = (_ema13 > _ema48) & (_ema48 > _ema200)
+        _bear_fan_2m: pd.Series = (_ema13 < _ema48) & (_ema48 < _ema200)
+        fan_bull: pd.Series = _bull_fan_2m.reindex(es.index, method="ffill").fillna(False)
+        fan_bear: pd.Series = _bear_fan_2m.reindex(es.index, method="ffill").fillna(False)
     else:
-        fan_braided = None
+        fan_bull = None
+        fan_bear = None
 
     # PDH/PDL + pre-market H/L context (annotation, not a gate).
     # Marks signals within 1 ATR of key levels as level_confluence=True.
@@ -361,11 +364,12 @@ def generate_signals(
         bull_fvg_or_ifvg = bull_fvg_on or (ifvg and bull_ifvg_on)
         bear_fvg_or_ifvg = bear_fvg_on or (ifvg and bear_ifvg_on)
 
-        # EMA fan gate: skip if EMAs braided on 2m chart
-        ema_ok = fan_braided is None or not bool(fan_braided.iloc[i])
+        # EMA fan gate: directional — long only when fan bullish, short only when fan bearish
+        ema_long_ok  = fan_bull is None or bool(fan_bull.iloc[i])
+        ema_short_ok = fan_bear is None or bool(fan_bear.iloc[i])
 
-        go_long  = bull_choch and bull_hunt_on and bull_fvg_or_ifvg and smt_ok_long  and htf_ok_long  and po3_ok_long  and ema_ok
-        go_short = bear_choch and bear_hunt_on and bear_fvg_or_ifvg and smt_ok_short and htf_ok_short and po3_ok_short and ema_ok
+        go_long  = bull_choch and bull_hunt_on and bull_fvg_or_ifvg and smt_ok_long  and htf_ok_long  and po3_ok_long  and ema_long_ok
+        go_short = bear_choch and bear_hunt_on and bear_fvg_or_ifvg and smt_ok_short and htf_ok_short and po3_ok_short and ema_short_ok
 
         if go_long:
             entry  = es["close"].iloc[i]
