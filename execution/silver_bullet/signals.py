@@ -84,6 +84,7 @@ def generate_signals(
     atr_mult: float = 0.5,
     atr_stop_mult: float = 0.0,
     htf_ema_period: int = 20,
+    po3_gate: bool = True,
 ) -> list[Signal]:
     """
     Generate Silver Bullet V1 trade signals.
@@ -108,6 +109,10 @@ def generate_signals(
         htf_ema_period: EMA period for 15m HTF bias gate (Gate 2).
                         Long entries only when 15m close > 15m EMA; short entries only
                         when 15m close < 15m EMA. Set to 0 to disable.
+        po3_gate:       PO3 open bias gate (Gate 3). When True, long entries require
+                        entry_price < 15m candle open (price still in discount/manipulation
+                        zone); short entries require entry_price > 15m candle open.
+                        Disabled when htf_ema_period == 0 (no 15m context available).
 
     Returns:
         List of Signal objects, one per qualifying setup.
@@ -118,15 +123,22 @@ def generate_signals(
 
     atr = _compute_atr(es["high"], es["low"], es["close"])
 
-    # HTF bias: resample 1m → 15m, compute EMA, forward-fill back to 1m index.
+    # HTF bias: resample 1m → 15m, compute EMA + open, forward-fill back to 1m index.
     # htf_bullish[i] = True when 15m close > 15m EMA at bar i (long bias).
+    # htf_open_1m[i]  = open of the 15m candle containing bar i (PO3 gate).
     if htf_ema_period > 0:
         htf = es["close"].resample("15min").last().dropna()
         htf_ema = htf.ewm(span=htf_ema_period, adjust=False).mean()
         htf_bull_15m = (htf > htf_ema)
         htf_bullish: pd.Series | None = htf_bull_15m.reindex(es.index, method="ffill").fillna(False)
+        htf_open_1m: pd.Series | None = (
+            es["open"].resample("15min").first()
+            .reindex(es.index, method="ffill")
+            .fillna(0.0)
+        )
     else:
-        htf_bullish = None  # disabled: both directions always allowed
+        htf_bullish = None   # disabled: both directions always allowed
+        htf_open_1m = None   # no 15m context → PO3 gate disabled
 
     n = len(es)
     signals: list[Signal] = []
@@ -237,8 +249,29 @@ def generate_signals(
         smt_ok_short = bear_smt_on if require_smt else True
         htf_ok_long  = htf_bullish is None or bool(htf_bullish.iloc[i])
         htf_ok_short = htf_bullish is None or not bool(htf_bullish.iloc[i])
-        go_long  = bull_choch and bull_hunt_on and bull_fvg_on and smt_ok_long  and htf_ok_long
-        go_short = bear_choch and bear_hunt_on and bear_fvg_on and smt_ok_short and htf_ok_short
+
+        # PO3 gate: verify the stop hunt (manipulation) swept into the correct AMD zone.
+        # Long  → hunt must have swept below the 15m open active at hunt time (discount).
+        # Short → hunt must have swept above the 15m open active at hunt time (premium).
+        # Checking the hunt bar (not CHoCH bar) because by CHoCH time price has already
+        # crossed the structural level — the discount/premium check belongs at the hunt.
+        if po3_gate and htf_open_1m is not None:
+            if bull_hunt_on and 0 <= bull_hunt_bar < len(htf_open_1m):
+                o15_hunt = float(htf_open_1m.iloc[bull_hunt_bar])
+                po3_ok_long = o15_hunt > 0 and bull_hunt_low < o15_hunt
+            else:
+                po3_ok_long = False
+            if bear_hunt_on and 0 <= bear_hunt_bar < len(htf_open_1m):
+                o15_hunt = float(htf_open_1m.iloc[bear_hunt_bar])
+                po3_ok_short = o15_hunt > 0 and bear_hunt_high > o15_hunt
+            else:
+                po3_ok_short = False
+        else:
+            po3_ok_long  = True
+            po3_ok_short = True
+
+        go_long  = bull_choch and bull_hunt_on and bull_fvg_on and smt_ok_long  and htf_ok_long  and po3_ok_long
+        go_short = bear_choch and bear_hunt_on and bear_fvg_on and smt_ok_short and htf_ok_short and po3_ok_short
 
         if go_long:
             entry  = es["close"].iloc[i]

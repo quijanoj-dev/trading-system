@@ -54,6 +54,7 @@ _PARAMS = dict(
     atr_mult=0.0,
     atr_stop_mult=2.0,
     htf_ema_period=20,
+    po3_gate=True,
 )
 
 _TS_ROOT = Path(__file__).resolve().parent.parent.parent

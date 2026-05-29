@@ -136,6 +136,7 @@ def main() -> None:
                      help="Pure ATR stop: entry ± N×ATR14 (default: 0=use hunt-wick; recommended 2.0 for 1m)")
     sig.add_argument("--smt",      action="store_true",      help="Require SMT divergence (booster-only by default per Finishers Journal)")
     sig.add_argument("--htf-ema",  type=int,   default=20,   help="15m EMA period for HTF bias gate (0=disabled, default: 20)")
+    sig.add_argument("--no-po3-gate", action="store_true", help="Disable PO3 open bias gate (default: enabled)")
 
     # Risk / output
     out = p.add_argument_group("Risk / output")
@@ -210,6 +211,7 @@ def main() -> None:
         atr_mult=args.atr_mult,
         atr_stop_mult=args.atr_stop,
         htf_ema_period=args.htf_ema,
+        po3_gate=not args.no_po3_gate,
     )
     print(f"  Signals found: {len(signals)}")
 
