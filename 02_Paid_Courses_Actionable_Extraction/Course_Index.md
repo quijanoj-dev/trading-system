@@ -4,7 +4,7 @@ Track all paid courses processed through the extraction pipeline.
 
 | # | Course Name | Source | Extraction Complete | Synced to NotebookLM | Verdict |
 | --- | --- | --- | --- | --- | --- |
-| — | *No courses extracted yet* | — | — | — | — |
+| 01 | ICT SMC PO3 Strategy | `Trading Summary/ICT-SMC-PO3/ICT SMC PO3 Strategy.pdf` | ✅ 2026-05-28 | ⏳ pending | Gaps vs SBV1: iFVG, OB, PO3 open bias, key levels |
 
 ## How to Add a Course
 
