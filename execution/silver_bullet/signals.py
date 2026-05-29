@@ -32,20 +32,28 @@ def _compute_atr(highs: pd.Series, lows: pd.Series, closes: pd.Series, period: i
     return tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
 _ET = pytz.timezone("America/New_York")
+
+# SBV1 defaults (10:00–11:00 ET, dead zone 10:30–10:45)
 _SESSION_START = time(10, 0)
 _SESSION_END   = time(11, 0)
 _DEAD_START    = time(10, 30)  # AMD transition dead zone — 0 wins in backtest
 _DEAD_END      = time(10, 45)
 
 
-def _in_session(ts: pd.Timestamp) -> bool:
+def _in_session(
+    ts: pd.Timestamp,
+    session_start: time = _SESSION_START,
+    session_end: time = _SESSION_END,
+    dead_start: Optional[time] = _DEAD_START,
+    dead_end: Optional[time] = _DEAD_END,
+) -> bool:
     if ts.tzinfo is None:
         ts = ts.tz_localize("UTC")
     et = ts.tz_convert(_ET)
     t = et.time()
-    if _DEAD_START <= t < _DEAD_END:
+    if dead_start and dead_end and dead_start <= t < dead_end:
         return False
-    return _SESSION_START <= t < _SESSION_END
+    return session_start <= t < session_end
 
 
 def _check_pivot_high(highs: pd.Series, idx: int, length: int) -> Optional[float]:
@@ -86,6 +94,11 @@ def generate_signals(
     htf_ema_period: int = 20,
     po3_gate: bool = True,
     ifvg: bool = True,
+    session_start: time = _SESSION_START,
+    session_end: time = _SESSION_END,
+    dead_start: Optional[time] = _DEAD_START,
+    dead_end: Optional[time] = _DEAD_END,
+    ema_fan_gate: bool = False,
 ) -> list[Signal]:
     """
     Generate Silver Bullet V1 trade signals.
@@ -144,6 +157,50 @@ def generate_signals(
         htf_bullish = None   # disabled: both directions always allowed
         htf_open_1m = None   # no 15m context → PO3 gate disabled
 
+    # EMA fan (Gate 2b — optional): 13/48/200 EMA on 2m chart.
+    # Braided = EMAs tightly stacked (spread < 0.2% of ema200) → skip.
+    # Spreading = momentum present → allow entry.
+    if ema_fan_gate:
+        closes_2m = es["close"].resample("2min").last().dropna()
+        _ema13  = closes_2m.ewm(span=13,  adjust=False).mean()
+        _ema48  = closes_2m.ewm(span=48,  adjust=False).mean()
+        _ema200 = closes_2m.ewm(span=200, adjust=False).mean()
+        _fan_spread = (_ema13 - _ema200).abs()
+        # braided when spread < 0.2% of ema200
+        _fan_braided_2m: pd.Series = _fan_spread < (_ema200 * 0.002)
+        # forward-fill 2m signal onto 1m index
+        fan_braided: pd.Series = _fan_braided_2m.reindex(es.index, method="ffill").fillna(True)
+    else:
+        fan_braided = None
+
+    # PDH/PDL + pre-market H/L context (annotation, not a gate).
+    # Marks signals within 1 ATR of key levels as level_confluence=True.
+    es_et = es.copy()
+    es_et.index = es_et.index.tz_convert(_ET)
+    _pdh: dict[object, float] = {}  # date → prior day high
+    _pdl: dict[object, float] = {}  # date → prior day low
+    _pmh: dict[object, float] = {}  # date → pre-market high
+    _pml: dict[object, float] = {}  # date → pre-market low
+
+    import datetime as _dt
+    for _day, _bars in es_et.groupby(es_et.index.date):
+        # regular session bars (9:30–16:00) become the PDH/PDL for the next day
+        _sess = _bars[
+            (_bars.index.time >= _dt.time(9, 30)) &
+            (_bars.index.time < _dt.time(16, 0))
+        ]
+        if len(_sess):
+            _pdh[_day] = float(_sess["high"].max())
+            _pdl[_day] = float(_sess["low"].min())
+        # pre-market bars (4:00–9:30) for same day
+        _pm = _bars[
+            (_bars.index.time >= _dt.time(4, 0)) &
+            (_bars.index.time < _dt.time(9, 30))
+        ]
+        if len(_pm):
+            _pmh[_day] = float(_pm["high"].max())
+            _pml[_day] = float(_pm["low"].min())
+
     n = len(es)
     signals: list[Signal] = []
 
@@ -168,7 +225,7 @@ def generate_signals(
 
     for i in range(min_start, n):
         ts = es.index[i]
-        in_sess = _in_session(ts)
+        in_sess = _in_session(ts, session_start, session_end, dead_start, dead_end)
 
         # ── Expire stale flags ──────────────────────────────────────────
         if bull_hunt_on and i - bull_hunt_bar > expiry_bars:
@@ -303,8 +360,12 @@ def generate_signals(
 
         bull_fvg_or_ifvg = bull_fvg_on or (ifvg and bull_ifvg_on)
         bear_fvg_or_ifvg = bear_fvg_on or (ifvg and bear_ifvg_on)
-        go_long  = bull_choch and bull_hunt_on and bull_fvg_or_ifvg and smt_ok_long  and htf_ok_long  and po3_ok_long
-        go_short = bear_choch and bear_hunt_on and bear_fvg_or_ifvg and smt_ok_short and htf_ok_short and po3_ok_short
+
+        # EMA fan gate: skip if EMAs braided on 2m chart
+        ema_ok = fan_braided is None or not bool(fan_braided.iloc[i])
+
+        go_long  = bull_choch and bull_hunt_on and bull_fvg_or_ifvg and smt_ok_long  and htf_ok_long  and po3_ok_long  and ema_ok
+        go_short = bear_choch and bear_hunt_on and bear_fvg_or_ifvg and smt_ok_short and htf_ok_short and po3_ok_short and ema_ok
 
         if go_long:
             entry  = es["close"].iloc[i]
@@ -319,6 +380,16 @@ def generate_signals(
             target = entry + risk * r_multiple
             grade  = "A+" if bull_smt_on else "A"
             fvg_mid_long = bull_fvg_mid if bull_fvg_on else bull_ifvg_mid
+            # Level confluence: within 1 ATR of PDH/PDL or pre-market H/L
+            _et_date = ts.tz_convert(_ET).date()
+            _atr_val = float(atr.iloc[i])
+            _levels = []
+            _prev = _et_date - _dt.timedelta(days=1)
+            if _prev in _pdh: _levels.append(_pdh[_prev])
+            if _prev in _pdl: _levels.append(_pdl[_prev])
+            if _et_date in _pmh: _levels.append(_pmh[_et_date])
+            if _et_date in _pml: _levels.append(_pml[_et_date])
+            _lvl_conf = any(abs(entry - lvl) <= _atr_val for lvl in _levels)
             signals.append(Signal(
                 timestamp=ts,
                 direction="long",
@@ -327,6 +398,7 @@ def generate_signals(
                 target_price=target,
                 label=f"SBV1-long-{grade}",
                 fvg_mid=fvg_mid_long,
+                level_confluence=_lvl_conf,
             ))
             bull_hunt_on = False
             bull_fvg_on  = False
@@ -347,6 +419,16 @@ def generate_signals(
             target = entry - risk * r_multiple
             grade  = "A+" if bear_smt_on else "A"
             fvg_mid_short = bear_fvg_mid if bear_fvg_on else bear_ifvg_mid
+            # Level confluence: within 1 ATR of PDH/PDL or pre-market H/L
+            _et_date = ts.tz_convert(_ET).date()
+            _atr_val = float(atr.iloc[i])
+            _levels = []
+            _prev = _et_date - _dt.timedelta(days=1)
+            if _prev in _pdh: _levels.append(_pdh[_prev])
+            if _prev in _pdl: _levels.append(_pdl[_prev])
+            if _et_date in _pmh: _levels.append(_pmh[_et_date])
+            if _et_date in _pml: _levels.append(_pml[_et_date])
+            _lvl_conf = any(abs(entry - lvl) <= _atr_val for lvl in _levels)
             signals.append(Signal(
                 timestamp=ts,
                 direction="short",
@@ -355,6 +437,7 @@ def generate_signals(
                 target_price=target,
                 label=f"SBV1-short-{grade}",
                 fvg_mid=fvg_mid_short,
+                level_confluence=_lvl_conf,
             ))
             bear_hunt_on = False
             bear_fvg_on  = False

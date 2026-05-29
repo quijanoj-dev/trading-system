@@ -53,6 +53,7 @@ class Signal:
     target_price: float              # Take-profit level
     label: str = ""                  # Optional tag (e.g. strategy name, setup type)
     fvg_mid: float = 0.0             # FVG zone midpoint — limit price for entry
+    level_confluence: bool = False   # Entry within 1 ATR of PDH/PDL or pre-market H/L
 
 
 @dataclass

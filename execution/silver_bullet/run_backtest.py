@@ -138,6 +138,10 @@ def main() -> None:
     sig.add_argument("--htf-ema",  type=int,   default=20,   help="15m EMA period for HTF bias gate (0=disabled, default: 20)")
     sig.add_argument("--no-po3-gate", action="store_true", help="Disable PO3 open bias gate (default: enabled)")
     sig.add_argument("--no-ifvg",     action="store_true", help="Disable iFVG as FVG substitute (default: enabled)")
+    sig.add_argument("--session-start", default="10:00", help="Session start time HH:MM ET (default: 10:00)")
+    sig.add_argument("--session-end",   default="11:00", help="Session end time HH:MM ET (default: 11:00)")
+    sig.add_argument("--no-dead-zone",  action="store_true", help="Disable dead zone filter (default: 10:30–10:45 for SBV1)")
+    sig.add_argument("--ema-fan-gate",  action="store_true", help="Skip signals when 13/48/200 EMA on 2m is braided (spread < 0.2%% of price)")
 
     # Risk / output
     out = p.add_argument_group("Risk / output")
@@ -145,6 +149,20 @@ def main() -> None:
     out.add_argument("--save",    action="store_true", help="Write metrics to Backtest_Results.md")
 
     args = p.parse_args()
+
+    # Parse session window times
+    from datetime import time as _time
+    def _parse_time(s: str) -> _time:
+        h, m = s.split(":")
+        return _time(int(h), int(m))
+
+    sess_start = _parse_time(args.session_start)
+    sess_end   = _parse_time(args.session_end)
+    # Dead zone: SBV1 default 10:30–10:45; disabled for other windows or via flag
+    if args.no_dead_zone or sess_start != _time(10, 0):
+        dead_s, dead_e = None, None
+    else:
+        dead_s, dead_e = _time(10, 30), _time(10, 45)
 
     # ── Fetch data ───────────────────────────────────────────────────────
     if args.source == "alpaca":
@@ -200,7 +218,8 @@ def main() -> None:
         source_label = f"yfinance 5m ES=F/NQ=F {args.period}"
 
     # ── Signals ──────────────────────────────────────────────────────────
-    print("\nGenerating SBV1 signals...")
+    window_label = f"{args.session_start}–{args.session_end} ET"
+    print(f"\nGenerating signals | window: {window_label}...")
     signals = generate_signals(
         es, nq,
         swing_length=args.swing,
@@ -214,6 +233,11 @@ def main() -> None:
         htf_ema_period=args.htf_ema,
         po3_gate=not args.no_po3_gate,
         ifvg=not args.no_ifvg,
+        session_start=sess_start,
+        session_end=sess_end,
+        dead_start=dead_s,
+        dead_end=dead_e,
+        ema_fan_gate=args.ema_fan_gate,
     )
     print(f"  Signals found: {len(signals)}")
 
