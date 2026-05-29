@@ -2,10 +2,15 @@
 ta_multi_lite — Zero-cost Top-10 Nasdaq bias scanner.
 
 Replaces TradingAgents (expensive LLM API) with a deterministic scoring engine:
-  - Technical  : RSI, MACD, EMA trend, ATR momentum (yfinance OHLCV)
+  - Technical  : RSI, MACD, EMA trend, ATR momentum (yfinance 1d OHLCV)
   - Fundamental: P/E, growth, margins, debt/equity (yfinance .info)
   - Momentum   : 52w position, 20d return, vs 50d/200d MA
-  - Sentiment  : News headline keyword scoring (yfinance .news)
+  - Intraday   : 5m EMA 9/20/50 stack — Stock Market Wolf layout
+
+5m EMA stack interpretation:
+  Bull: price > EMA9 > EMA20 > EMA50 → long bias
+  Bear: price < EMA9 < EMA20 < EMA50 → short bias
+  Mixed: EMAs tangled → neutral
 
 Composite score 0–100:
   ≥ 65 → BUY  |  ≤ 35 → SELL  |  35–65 → HOLD
@@ -42,19 +47,6 @@ TOP10_NASDAQ = [
     "TSLA", "GOOGL", "AVGO", "COST", "NFLX",
 ]
 
-# ── Keyword lists for news sentiment ────────────────────────────────────────
-_BULL_WORDS = {
-    "beat", "beats", "record", "upgrade", "upgraded", "buy", "outperform",
-    "raised", "raise", "strong", "surge", "surged", "growth", "profit",
-    "revenue", "positive", "bullish", "rally", "rallied", "breakout",
-    "innovation", "partnership", "deal", "acquisition", "launch",
-}
-_BEAR_WORDS = {
-    "miss", "misses", "missed", "downgrade", "downgraded", "sell",
-    "underperform", "cut", "weak", "decline", "declined", "loss",
-    "layoff", "layoffs", "lawsuit", "investigation", "warning", "bearish",
-    "crash", "crashed", "recall", "fine", "penalty", "concern",
-}
 
 
 # ── Technical indicators (pure pandas, no extra deps) ───────────────────────
@@ -258,39 +250,49 @@ def _score_momentum(info: dict, hist: pd.DataFrame) -> tuple[float, dict]:
     return round(mom_score, 1), details
 
 
-def _score_sentiment(news: list[dict]) -> tuple[float, dict]:
-    if not news:
-        return 50.0, {"news_count": 0}
+def _score_ema5m(ticker: str) -> tuple[float, dict]:
+    """5-minute EMA 9/20/50 stack — Stock Market Wolf intraday bias."""
+    try:
+        hist5m = yf.Ticker(ticker).history(period="5d", interval="5m")
+    except Exception as e:
+        return 50.0, {"error": str(e)}
 
-    bull_hits = 0
-    bear_hits = 0
-    scored = 0
-    for item in news[:8]:  # last 8 articles
-        title = (item.get("title") or "").lower()
-        words = set(title.split())
-        b = len(words & _BULL_WORDS)
-        br = len(words & _BEAR_WORDS)
-        bull_hits += b
-        bear_hits += br
-        scored += 1
+    if hist5m.empty or len(hist5m) < 50:
+        return 50.0, {"error": "insufficient 5m bars"}
+
+    close = hist5m["Close"]
+    price  = float(close.iloc[-1])
+    ema9   = float(close.ewm(span=9,  adjust=False).mean().iloc[-1])
+    ema20  = float(close.ewm(span=20, adjust=False).mean().iloc[-1])
+    ema50  = float(close.ewm(span=50, adjust=False).mean().iloc[-1])
 
     details = {
-        "news_count": scored,
-        "bull_signals": bull_hits,
-        "bear_signals": bear_hits,
+        "price_5m":  round(price,  2),
+        "ema9_5m":   round(ema9,   2),
+        "ema20_5m":  round(ema20,  2),
+        "ema50_5m":  round(ema50,  2),
     }
 
-    total = bull_hits + bear_hits
-    if total == 0:
-        return 50.0, details
+    # Stack alignment scoring
+    bull_conditions = [price > ema9, ema9 > ema20, ema20 > ema50, price > ema50]
+    bear_conditions = [price < ema9, ema9 < ema20, ema20 < ema50, price < ema50]
+    bull_count = sum(bull_conditions)
+    bear_count = sum(bear_conditions)
 
-    bull_ratio = bull_hits / total
-    if bull_ratio > 0.7:   sentiment_score = 75.0
-    elif bull_ratio > 0.5: sentiment_score = 60.0
-    elif bull_ratio > 0.3: sentiment_score = 40.0
-    else:                  sentiment_score = 25.0
+    details["stack"] = (
+        "FULL_BULL" if bull_count == 4 else
+        "FULL_BEAR" if bear_count == 4 else
+        f"MIXED_{bull_count}b/{bear_count}br"
+    )
 
-    return round(sentiment_score, 1), details
+    # Score: full bull=85, 3/4 bull=70, mixed=50, 3/4 bear=30, full bear=15
+    if   bull_count == 4: score = 85.0
+    elif bull_count == 3: score = 70.0
+    elif bear_count == 3: score = 30.0
+    elif bear_count == 4: score = 15.0
+    else:                 score = 50.0
+
+    return score, details
 
 
 # ── Main scoring entry point ─────────────────────────────────────────────────
@@ -312,23 +314,18 @@ def _score_ticker(ticker: str) -> dict:
     except Exception:
         info = {}
 
-    try:
-        news = t.news or []
-    except Exception:
-        news = []
-
     # Individual scores
-    tech_score,  tech_det  = _score_technical(hist)
-    fund_score,  fund_det  = _score_fundamental(info)
-    mom_score,   mom_det   = _score_momentum(info, hist)
-    sent_score,  sent_det  = _score_sentiment(news)
+    tech_score, tech_det = _score_technical(hist)
+    fund_score, fund_det = _score_fundamental(info)
+    mom_score,  mom_det  = _score_momentum(info, hist)
+    ema5m_score, ema5m_det = _score_ema5m(ticker)
 
     # Weighted composite
     composite = (
-        tech_score  * 0.40 +
+        tech_score  * 0.35 +
         fund_score  * 0.25 +
         mom_score   * 0.25 +
-        sent_score  * 0.10
+        ema5m_score * 0.15
     )
     composite = round(composite, 1)
 
@@ -345,10 +342,10 @@ def _score_ticker(ticker: str) -> dict:
         "score":    composite,
         "error":    None,
         "breakdown": {
-            "technical":    {"score": tech_score,  **tech_det},
-            "fundamental":  {"score": fund_score,  **fund_det},
-            "momentum":     {"score": mom_score,   **mom_det},
-            "sentiment":    {"score": sent_score,  **sent_det},
+            "technical":   {"score": tech_score,  **tech_det},
+            "fundamental": {"score": fund_score,  **fund_det},
+            "momentum":    {"score": mom_score,   **mom_det},
+            "ema5m":       {"score": ema5m_score, **ema5m_det},
         },
     }
 
@@ -395,11 +392,12 @@ def main() -> None:
         else:
             score_str = f"score={r['score']:.0f}"
             bd = r["breakdown"]
+            stack = bd["ema5m"].get("stack", "?")
             detail_str = (
                 f"  tech={bd['technical']['score']:.0f}"
                 f"  fund={bd['fundamental']['score']:.0f}"
                 f"  mom={bd['momentum']['score']:.0f}"
-                f"  sent={bd['sentiment']['score']:.0f}"
+                f"  5m={bd['ema5m']['score']:.0f}({stack})"
             )
             print(f"→ {r['decision']:<4}  {score_str}{detail_str if args.verbose else ''}")
 
@@ -409,21 +407,22 @@ def main() -> None:
     qqq_bias = _aggregate(results)
 
     print("\n" + "=" * 60)
-    print(f"{'Ticker':<8} {'Decision':<8} {'Score':>5}  {'Tech':>4} {'Fund':>4} {'Mom':>4} {'Sent':>4}")
-    print("-" * 50)
+    print(f"{'Ticker':<8} {'Decision':<8} {'Score':>5}  {'Tech':>4} {'Fund':>4} {'Mom':>4} {'5mEMA':>5}  {'Stack'}")
+    print("-" * 62)
     for r in results:
         if r["error"]:
             print(f"{r['ticker']:<8} {'ERROR':<8}")
         else:
             bd = r["breakdown"]
+            stack = bd["ema5m"].get("stack", "?")
             marker = " ★" if r["decision"] in ("BUY", "SELL") else ""
             print(
                 f"{r['ticker']:<8} {r['decision']:<8} {r['score']:>5.0f}"
                 f"  {bd['technical']['score']:>4.0f}"
                 f" {bd['fundamental']['score']:>4.0f}"
                 f" {bd['momentum']['score']:>4.0f}"
-                f" {bd['sentiment']['score']:>4.0f}"
-                f"{marker}"
+                f" {bd['ema5m']['score']:>5.0f}"
+                f"  {stack}{marker}"
             )
     print("=" * 60)
 
@@ -446,7 +445,7 @@ def main() -> None:
         "results":  results,
         "summary":  {"buy": buy_n, "sell": sell_n, "hold": hold_n, "error": err_n},
         "qqq_bias": qqq_bias,
-        "weights":  {"technical": 0.40, "fundamental": 0.25, "momentum": 0.25, "sentiment": 0.10},
+        "weights":  {"technical": 0.35, "fundamental": 0.25, "momentum": 0.25, "ema5m": 0.15},
     }
     out_path.write_text(json.dumps(payload, indent=2))
     print(f"Saved → {out_path}")
