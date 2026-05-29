@@ -42,3 +42,18 @@ context/regime_signal.json
 
 # Agentic QS pipeline runs (generated artifacts, not versioned)
 execution/agents/output/
+
+# Results — data cache (large CSVs, regenerated at runtime)
+results/data_cache/
+
+# Results — TradingAgents full state dumps (200KB+, not useful to version)
+results/**/full_states_log*.json
+
+# Runtime lock files
+.claude/scheduled_tasks.lock
+
+# Third-party tooling dirs (not part of this project)
+.agents/
+.antigravitycli/
+.kiro/
+skills-lock.json

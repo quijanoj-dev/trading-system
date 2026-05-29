@@ -1,0 +1,75 @@
+{
+  "date": "2026-05-29",
+  "ran_at": "2026-05-29T20:05:51.086813",
+  "tickers": [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "AMZN",
+    "META",
+    "TSLA",
+    "GOOGL",
+    "AVGO",
+    "COST",
+    "NFLX"
+  ],
+  "results": [
+    {
+      "ticker": "AAPL",
+      "decision": "[{'SIGNATURE': 'ESSBCMUIDHGCKKAOKYGB0WJF0JKGNQTW0YOTYONNKQBZUDLZWY6RLZSLVBH6/K0GKRB2+CM699LX+CD09XXFM9YRNZOIGFN9P+7LMHFJBGF1ZGUTC29UBMV0LTQTNJGAQGH0AGLUA2LUZXIMYFJAS2UDHNU11NTNGGYU20G2VO7SFTCPS0QIMG1ZHWPNBAEKPA5S9+IFTSVHFFEYSTBMD7PQCOKRSBBAXC6DHGOQZGPDVA98GAR9FSOUGHGDA/MWCAEEFUAFDV+0FRIXRGKYAQ==', 'THINKING': 'HOLD', 'TYPE': 'THINKING'}, {'TEXT': 'HOLD', 'TYPE': 'TEXT'}]",
+      "error": null
+    },
+    {
+      "ticker": "MSFT",
+      "decision": "[{'SIGNATURE': 'ESOBCMUIDHGCKKCS+P2FUVNNUWD0RSOJ5EM2Y/JCW+V7R3Q0NOSIAMCJDQXMCV1GP5NWEQQJAUZQJ+IQDQ26AESY6LE1A4LLFMVFMHFJBGF1ZGUTC29UBMV0LTQTNJGAQGH0AGLUA2LUZXIMCQG+VIM2/+HCJHKGGGYLEMMA3CLIK4/TWDEIMFJYIRU5Q5YPT405CGSE29JGEYWAYRIHOR/P/UK90LHJZT3BZPNELKW7ZF/2/OVTBCOT+ZO8PWBLB8JCIDLY9U7XJJQ9XRGB', 'THINKING': 'BUY', 'TYPE': 'THINKING'}, {'TEXT': 'BUY', 'TYPE': 'TEXT'}]",
+      "error": null
+    },
+    {
+      "ticker": "NVDA",
+      "decision": "ERROR",
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CbXTirx7YDgxX14c6LgeR'}"
+    },
+    {
+      "ticker": "AMZN",
+      "decision": "ERROR",
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CbXTistg1gSnf1WAdAfin'}"
+    },
+    {
+      "ticker": "META",
+      "decision": "ERROR",
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CbXTitmFm7N46LQYXXKvp'}"
+    },
+    {
+      "ticker": "TSLA",
+      "decision": "ERROR",
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CbXTiudM7cexYAu8FN6kK'}"
+    },
+    {
+      "ticker": "GOOGL",
+      "decision": "ERROR",
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CbXTiva9nL7N9e58ALdNj'}"
+    },
+    {
+      "ticker": "AVGO",
+      "decision": "ERROR",
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CbXTiwbAifSWtq1iLztjh'}"
+    },
+    {
+      "ticker": "COST",
+      "decision": "ERROR",
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CbXTixXyHepEZAZrMubUP'}"
+    },
+    {
+      "ticker": "NFLX",
+      "decision": "ERROR",
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CbXTiyQorbnYnf2rxpNQr'}"
+    }
+  ],
+  "summary": {
+    "buy": 0,
+    "sell": 0,
+    "hold": 0,
+    "error": 8
+  },
+  "qqq_bias": "NEUTRAL"
+}

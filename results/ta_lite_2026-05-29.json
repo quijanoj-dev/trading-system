@@ -1,0 +1,432 @@
+{
+  "date": "2026-05-29",
+  "engine": "ta_multi_lite",
+  "ran_at": "2026-05-29T20:57:47.115771+00:00",
+  "tickers": [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "AMZN",
+    "META",
+    "TSLA",
+    "GOOGL",
+    "AVGO",
+    "COST",
+    "NFLX"
+  ],
+  "results": [
+    {
+      "ticker": "AAPL",
+      "decision": "BUY",
+      "score": 68.4,
+      "error": null,
+      "breakdown": {
+        "technical": {
+          "score": 54.8,
+          "rsi": 84.3,
+          "macd_hist": 0.6151,
+          "ema20": 297.83,
+          "ema50": 283.08,
+          "price_vs_ema20_pct": 4.78,
+          "vol_ratio_5d_20d": 1.02
+        },
+        "fundamental": {
+          "score": 66.0,
+          "forwardPE": 32.479454,
+          "revenueGrowth": 0.166,
+          "earningsGrowth": 0.218,
+          "grossMargins": 0.47862,
+          "debtToEquity": 79.548
+        },
+        "momentum": {
+          "score": 80.0,
+          "52w_position_pct": 97.5,
+          "return_20d_pct": 11.5,
+          "beta": 1.065,
+          "days_to_earnings": 62
+        },
+        "ema5m": {
+          "score": 85.0,
+          "price_5m": 312.07,
+          "ema9_5m": 311.82,
+          "ema20_5m": 311.38,
+          "ema50_5m": 311.13,
+          "stack": "FULL_BULL"
+        }
+      }
+    },
+    {
+      "ticker": "MSFT",
+      "decision": "BUY",
+      "score": 66.9,
+      "error": null,
+      "breakdown": {
+        "technical": {
+          "score": 56.8,
+          "rsi": 71.7,
+          "macd_hist": 1.7733,
+          "ema20": 418.73,
+          "ema50": 412.63,
+          "price_vs_ema20_pct": 7.52,
+          "vol_ratio_5d_20d": 1.18
+        },
+        "fundamental": {
+          "score": 72.0,
+          "forwardPE": 23.28298,
+          "revenueGrowth": 0.183,
+          "earningsGrowth": 0.234,
+          "grossMargins": 0.68309,
+          "debtToEquity": 30.271
+        },
+        "momentum": {
+          "score": 65.0,
+          "52w_position_pct": 47.2,
+          "return_20d_pct": 8.87,
+          "beta": 1.093,
+          "days_to_earnings": 61
+        },
+        "ema5m": {
+          "score": 85.0,
+          "price_5m": 448.64,
+          "ema9_5m": 444.92,
+          "ema20_5m": 443.87,
+          "ema50_5m": 442.56,
+          "stack": "FULL_BULL"
+        }
+      }
+    },
+    {
+      "ticker": "NVDA",
+      "decision": "HOLD",
+      "score": 52.7,
+      "error": null,
+      "breakdown": {
+        "technical": {
+          "score": 44.2,
+          "rsi": 46.3,
+          "macd_hist": -2.1654,
+          "ema20": 214.12,
+          "ema50": 204.66,
+          "price_vs_ema20_pct": -1.39,
+          "vol_ratio_5d_20d": 1.1
+        },
+        "fundamental": {
+          "score": 75.0,
+          "forwardPE": 16.681019,
+          "revenueGrowth": 0.852,
+          "earningsGrowth": 2.145,
+          "grossMargins": 0.74144995,
+          "debtToEquity": 6.555
+        },
+        "momentum": {
+          "score": 65.0,
+          "52w_position_pct": 75.5,
+          "return_20d_pct": 6.39,
+          "beta": 2.244,
+          "days_to_earnings": 89
+        },
+        "ema5m": {
+          "score": 15.0,
+          "price_5m": 211.15,
+          "ema9_5m": 215.14,
+          "ema20_5m": 215.98,
+          "ema50_5m": 216.11,
+          "stack": "FULL_BEAR"
+        }
+      }
+    },
+    {
+      "ticker": "AMZN",
+      "decision": "HOLD",
+      "score": 56.9,
+      "error": null,
+      "breakdown": {
+        "technical": {
+          "score": 56.2,
+          "rsi": 47.9,
+          "macd_hist": -1.0206,
+          "ema20": 265.54,
+          "ema50": 252.52,
+          "price_vs_ema20_pct": 1.92,
+          "vol_ratio_5d_20d": 1.0
+        },
+        "fundamental": {
+          "score": 66.0,
+          "forwardPE": 27.443575,
+          "revenueGrowth": 0.166,
+          "earningsGrowth": 0.748,
+          "grossMargins": 0.50604,
+          "debtToEquity": 53.3
+        },
+        "momentum": {
+          "score": 65.0,
+          "52w_position_pct": 90.4,
+          "return_20d_pct": 0.89,
+          "beta": 1.468,
+          "days_to_earnings": 62
+        },
+        "ema5m": {
+          "score": 30.0,
+          "price_5m": 270.65,
+          "ema9_5m": 270.9,
+          "ema20_5m": 270.82,
+          "ema50_5m": 271.1,
+          "stack": "MIXED_1b/3br"
+        }
+      }
+    },
+    {
+      "ticker": "META",
+      "decision": "BUY",
+      "score": 66.1,
+      "error": null,
+      "breakdown": {
+        "technical": {
+          "score": 57.8,
+          "rsi": 64.0,
+          "macd_hist": 3.2008,
+          "ema20": 621.11,
+          "ema50": 625.58,
+          "price_vs_ema20_pct": 1.83,
+          "vol_ratio_5d_20d": 1.11
+        },
+        "fundamental": {
+          "score": 75.0,
+          "forwardPE": 17.490955,
+          "revenueGrowth": 0.331,
+          "earningsGrowth": 0.624,
+          "grossMargins": 0.81941,
+          "debtToEquity": 35.608
+        },
+        "momentum": {
+          "score": 57.5,
+          "52w_position_pct": 40.7,
+          "return_20d_pct": 3.9,
+          "beta": 1.243,
+          "days_to_earnings": 61
+        },
+        "ema5m": {
+          "score": 85.0,
+          "price_5m": 632.52,
+          "ema9_5m": 630.43,
+          "ema20_5m": 628.97,
+          "ema50_5m": 627.9,
+          "stack": "FULL_BULL"
+        }
+      }
+    },
+    {
+      "ticker": "TSLA",
+      "decision": "HOLD",
+      "score": 56.1,
+      "error": null,
+      "breakdown": {
+        "technical": {
+          "score": 62.8,
+          "rsi": 53.0,
+          "macd_hist": 0.6994,
+          "ema20": 420.08,
+          "ema50": 406.72,
+          "price_vs_ema20_pct": 3.74,
+          "vol_ratio_5d_20d": 0.81
+        },
+        "fundamental": {
+          "score": 55.0,
+          "forwardPE": 173.64296,
+          "revenueGrowth": 0.158,
+          "earningsGrowth": 0.083,
+          "grossMargins": 0.19065,
+          "debtToEquity": 18.738
+        },
+        "momentum": {
+          "score": 72.5,
+          "52w_position_pct": 72.1,
+          "return_20d_pct": 11.51,
+          "beta": 1.793,
+          "days_to_earnings": 54
+        },
+        "ema5m": {
+          "score": 15.0,
+          "price_5m": 435.56,
+          "ema9_5m": 435.61,
+          "ema20_5m": 435.86,
+          "ema50_5m": 436.38,
+          "stack": "FULL_BEAR"
+        }
+      }
+    },
+    {
+      "ticker": "GOOGL",
+      "decision": "HOLD",
+      "score": 53.4,
+      "error": null,
+      "breakdown": {
+        "technical": {
+          "score": 48.2,
+          "rsi": 35.0,
+          "macd_hist": -3.9027,
+          "ema20": 382.52,
+          "ema50": 359.78,
+          "price_vs_ema20_pct": -0.57,
+          "vol_ratio_5d_20d": 0.98
+        },
+        "fundamental": {
+          "score": 72.0,
+          "forwardPE": 26.249208,
+          "revenueGrowth": 0.218,
+          "earningsGrowth": 0.82,
+          "grossMargins": 0.60368,
+          "debtToEquity": 20.026
+        },
+        "momentum": {
+          "score": 65.0,
+          "52w_position_pct": 88.5,
+          "return_20d_pct": -1.39,
+          "beta": 1.267,
+          "days_to_earnings": 55
+        },
+        "ema5m": {
+          "score": 15.0,
+          "price_5m": 380.39,
+          "ema9_5m": 381.48,
+          "ema20_5m": 381.88,
+          "ema50_5m": 382.61,
+          "stack": "FULL_BEAR"
+        }
+      }
+    },
+    {
+      "ticker": "AVGO",
+      "decision": "BUY",
+      "score": 65.1,
+      "error": null,
+      "breakdown": {
+        "technical": {
+          "score": 51.8,
+          "rsi": 57.8,
+          "macd_hist": -0.9073,
+          "ema20": 419.25,
+          "ema50": 395.77,
+          "price_vs_ema20_pct": 6.56,
+          "vol_ratio_5d_20d": 1.02
+        },
+        "fundamental": {
+          "score": 72.0,
+          "forwardPE": 24.28099,
+          "revenueGrowth": 0.295,
+          "earningsGrowth": 0.316,
+          "grossMargins": 0.76725996,
+          "debtToEquity": 82.704
+        },
+        "momentum": {
+          "score": 65.0,
+          "52w_position_pct": 99.0,
+          "return_20d_pct": 6.05,
+          "beta": 1.44,
+          "days_to_earnings": 5
+        },
+        "ema5m": {
+          "score": 85.0,
+          "price_5m": 447.21,
+          "ema9_5m": 441.75,
+          "ema20_5m": 439.55,
+          "ema50_5m": 438.11,
+          "stack": "FULL_BULL"
+        }
+      }
+    },
+    {
+      "ticker": "COST",
+      "decision": "HOLD",
+      "score": 51.5,
+      "error": null,
+      "breakdown": {
+        "technical": {
+          "score": 43.2,
+          "rsi": 39.2,
+          "macd_hist": -9.6208,
+          "ema20": 1018.17,
+          "ema50": 1008.69,
+          "price_vs_ema20_pct": -6.07,
+          "vol_ratio_5d_20d": 1.4
+        },
+        "fundamental": {
+          "score": 61.0,
+          "forwardPE": 42.261192,
+          "revenueGrowth": 0.215,
+          "earningsGrowth": 0.455,
+          "grossMargins": 0.12926,
+          "debtToEquity": 60.257
+        },
+        "momentum": {
+          "score": 42.5,
+          "52w_position_pct": 44.5,
+          "return_20d_pct": -5.47,
+          "beta": 0.908,
+          "days_to_earnings": -1
+        },
+        "ema5m": {
+          "score": 70.0,
+          "price_5m": 956.07,
+          "ema9_5m": 955.1,
+          "ema20_5m": 953.74,
+          "ema50_5m": 954.56,
+          "stack": "MIXED_3b/1br"
+        }
+      }
+    },
+    {
+      "ticker": "NFLX",
+      "decision": "HOLD",
+      "score": 49.0,
+      "error": null,
+      "breakdown": {
+        "technical": {
+          "score": 47.8,
+          "rsi": 44.6,
+          "macd_hist": 0.0609,
+          "ema20": 88.79,
+          "ema50": 90.96,
+          "price_vs_ema20_pct": -3.12,
+          "vol_ratio_5d_20d": 0.88
+        },
+        "fundamental": {
+          "score": 69.0,
+          "forwardPE": 22.384312,
+          "revenueGrowth": 0.162,
+          "earningsGrowth": 0.864,
+          "grossMargins": 0.49029,
+          "debtToEquity": 53.788
+        },
+        "momentum": {
+          "score": 30.0,
+          "52w_position_pct": 18.6,
+          "return_20d_pct": -6.56,
+          "beta": 1.548,
+          "days_to_earnings": 48
+        },
+        "ema5m": {
+          "score": 50.0,
+          "price_5m": 86.02,
+          "ema9_5m": 86.15,
+          "ema20_5m": 86.12,
+          "ema50_5m": 86.11,
+          "stack": "MIXED_2b/2br"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "buy": 4,
+    "sell": 0,
+    "hold": 6,
+    "error": 0
+  },
+  "qqq_bias": "NEUTRAL",
+  "weights": {
+    "technical": 0.35,
+    "fundamental": 0.25,
+    "momentum": 0.25,
+    "ema5m": 0.15
+  }
+}
