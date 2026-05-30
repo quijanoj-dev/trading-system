@@ -23,8 +23,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import random
 import re
 import sys
+from datetime import time as _time
 from pathlib import Path
 
 import pandas as pd
@@ -103,6 +105,134 @@ def _update_results_md(metrics_str: str, n_signals: int, source: str, label: str
     print(f"\nMetrics written to {_BACKTEST_RESULTS}")
 
 
+def _parse_time(s: str) -> _time:
+    h, m = s.split(":")
+    return _time(int(h), int(m))
+
+
+# ─── Monte Carlo validation ──────────────────────────────────────────────────
+
+_MC_PARAM_SPACE: dict[str, list] = {
+    "fvg_min": [0.03, 0.05, 0.07, 0.10, 0.15, 0.20],
+    "sh_bars": [20, 30, 40, 60, 80, 100],
+    "swing":   [5, 8, 10, 12, 15],
+    "expiry":  [10, 15, 20, 25, 30],
+    "r":       [2.0, 2.5, 3.0, 3.5, 4.0],
+}
+
+
+def _monte_carlo_validate(
+    es: pd.DataFrame,
+    nq: pd.DataFrame,
+    result_original,
+    args,
+    config: BacktestConfig,
+    n_combos: int = 80,
+    n_bootstrap: int = 1000,
+) -> None:
+    """
+    Two-phase Monte Carlo validation:
+      Phase 1 — 80 random param combos: what % beat original P&L?
+      Phase 2 — Bootstrap (n=1000, with replacement): 95% CI for original strategy P&L.
+    """
+    sess_start = _parse_time(args.session_start)
+    sess_end   = _parse_time(args.session_end)
+    if args.no_dead_zone or sess_start != _time(10, 0):
+        dead_s, dead_e = None, None
+    else:
+        dead_s, dead_e = _time(10, 30), _time(10, 45)
+
+    orig_trades = result_original.trades or []
+    orig_pnl    = sum(t.pnl_dollars for t in orig_trades)
+    orig_n      = len(orig_trades)
+
+    print(f"\n{'─' * 60}")
+    print(f"Monte Carlo Validation  ({n_combos} random param combos)")
+    print(f"  Original: {orig_n} trades, P&L=${orig_pnl:+.2f}")
+
+    # ── Phase 1: random param combos ────────────────────────────────────
+    print("  Running combos", end="", flush=True)
+    rng = random.Random(42)
+    combo_pnls: list[float] = []
+
+    for i in range(n_combos):
+        params = {k: rng.choice(v) for k, v in _MC_PARAM_SPACE.items()}
+        try:
+            sigs = generate_signals(
+                es, nq,
+                swing_length=params["swing"],
+                sh_lookback=params["sh_bars"],
+                fvg_min=params["fvg_min"],
+                expiry_bars=params["expiry"],
+                r_multiple=params["r"],
+                require_smt=args.smt,
+                atr_mult=args.atr_mult,
+                atr_stop_mult=args.atr_stop,
+                htf_ema_period=args.htf_ema,
+                po3_gate=not args.no_po3_gate,
+                ifvg=not args.no_ifvg,
+                session_start=sess_start,
+                session_end=sess_end,
+                dead_start=dead_s,
+                dead_end=dead_e,
+                ema_fan_gate=args.ema_fan_gate,
+            )
+            if sigs:
+                res = Backtester(config).run(sigs, es)
+                combo_pnls.append(
+                    sum(t.pnl_dollars for t in res.trades) if res.trades else 0.0
+                )
+        except Exception:
+            pass
+        if (i + 1) % 10 == 0:
+            print(".", end="", flush=True)
+    print()
+
+    if not combo_pnls:
+        print("  No valid combos generated — skipping Monte Carlo output.")
+        print(f"{'─' * 60}")
+        return
+
+    s = pd.Series(combo_pnls)
+    beat      = sum(1 for p in combo_pnls if p > orig_pnl)
+    beat_pct  = beat / len(combo_pnls) * 100
+    pct_rank  = float((s < orig_pnl).mean() * 100)
+
+    print(f"  Valid combos : {len(combo_pnls)}")
+    print(f"  Beat original: {beat}/{len(combo_pnls)} ({beat_pct:.0f}%)")
+    print(f"  Combo P&L    : median=${s.median():+.0f}  "
+          f"p25=${s.quantile(0.25):+.0f}  p75=${s.quantile(0.75):+.0f}")
+    print(f"  Original at  : {pct_rank:.0f}th percentile of combos")
+
+    # ── Phase 2: bootstrap P&L confidence interval ──────────────────────
+    if orig_n >= 5:
+        pnl_list = [t.pnl_dollars for t in orig_trades]
+        rng2 = random.Random(99)
+        bs_pnls = [
+            sum(rng2.choices(pnl_list, k=orig_n))
+            for _ in range(n_bootstrap)
+        ]
+        bs = pd.Series(bs_pnls)
+        ci_low, ci_high = bs.quantile(0.025), bs.quantile(0.975)
+        robust = ci_low > 0
+        print(f"\n  Bootstrap 95% CI ({n_bootstrap} samples, with replacement):")
+        print(f"    P&L CI: [${ci_low:+.0f}, ${ci_high:+.0f}]")
+        print(f"    Robustness: {'✓ CI entirely positive' if robust else '✗ CI crosses zero — not robust'}")
+
+    # ── Overfit flag ─────────────────────────────────────────────────────
+    print()
+    if beat_pct > 70:
+        flag = "⚠  HIGH OVERFIT RISK  — >70% of random combos beat this config"
+    elif beat_pct > 50:
+        flag = "⚠  MODERATE OVERFIT RISK — >50% of combos beat this config"
+    elif pct_rank >= 70:
+        flag = "✓  LOW OVERFIT RISK — original ranks above 70th percentile"
+    else:
+        flag = "—  ACCEPTABLE — original in top 40% of random combos"
+    print(f"  {flag}")
+    print(f"{'─' * 60}")
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -145,17 +275,14 @@ def main() -> None:
 
     # Risk / output
     out = p.add_argument_group("Risk / output")
-    out.add_argument("--equity",  type=float, default=25_000.0, help="Starting equity (default: 25000)")
-    out.add_argument("--save",    action="store_true", help="Write metrics to Backtest_Results.md")
+    out.add_argument("--equity",       type=float, default=25_000.0, help="Starting equity (default: 25000)")
+    out.add_argument("--save",         action="store_true", help="Write metrics to Backtest_Results.md")
+    out.add_argument("--monte-carlo",  action="store_true",
+                     help="Run 80-combo Monte Carlo param sweep + bootstrap P&L CI after backtest")
 
     args = p.parse_args()
 
     # Parse session window times
-    from datetime import time as _time
-    def _parse_time(s: str) -> _time:
-        h, m = s.split(":")
-        return _time(int(h), int(m))
-
     sess_start = _parse_time(args.session_start)
     sess_end   = _parse_time(args.session_end)
     # Dead zone: SBV1 default 10:30–10:45; disabled for other windows or via flag
@@ -288,6 +415,9 @@ def main() -> None:
 
     if args.save:
         _update_results_md(result.summary(), len(signals), args.source, source_label)
+
+    if args.monte_carlo:
+        _monte_carlo_validate(es, nq, result, args, config)
 
 
 if __name__ == "__main__":

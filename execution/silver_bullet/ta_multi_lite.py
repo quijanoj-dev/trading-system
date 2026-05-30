@@ -6,6 +6,7 @@ Replaces TradingAgents (expensive LLM API) with a deterministic scoring engine:
   - Fundamental: P/E, growth, margins, debt/equity (yfinance .info)
   - Momentum   : 52w position, 20d return, vs 50d/200d MA
   - Intraday   : 5m EMA 9/20/50 stack — Stock Market Wolf layout
+  - Opening Prt: price vs 9:30 AM ET open — session directional bias
 
 5m EMA stack interpretation:
   Bull: price > EMA9 > EMA20 > EMA50 → long bias
@@ -14,6 +15,7 @@ Replaces TradingAgents (expensive LLM API) with a deterministic scoring engine:
 
 Composite score 0–100:
   ≥ 65 → BUY  |  ≤ 35 → SELL  |  35–65 → HOLD
+  Weights: tech=0.30 · fund=0.22 · mom=0.22 · ema5m=0.11 · op_bias=0.15
 
 Cost: $0.  Runtime: ~30s for 10 tickers.
 
@@ -30,7 +32,7 @@ import json
 import sys
 import time
 import warnings
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time as _time, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -295,6 +297,46 @@ def _score_ema5m(ticker: str) -> tuple[float, dict]:
     return score, details
 
 
+def _opening_print_bias(ticker: str) -> tuple[float, dict]:
+    """Opening Print: price vs 9:30 AM ET open. Above OP → 80 (long), below → 20 (short)."""
+    try:
+        hist1m = yf.Ticker(ticker).history(period="1d", interval="1m")
+    except Exception as e:
+        return 50.0, {"error": str(e)}
+
+    if hist1m.empty:
+        return 50.0, {"error": "no intraday data"}
+
+    idx = hist1m.index
+    if idx.tzinfo is None:
+        idx = idx.tz_localize("America/New_York")
+    else:
+        idx = idx.tz_convert("America/New_York")
+    hist1m.index = idx
+
+    open_bars = hist1m[hist1m.index.time >= _time(9, 30)]
+    if open_bars.empty:
+        return 50.0, {"error": "no bars at/after 9:30 ET"}
+
+    op_price = float(open_bars.iloc[0]["Open"])
+    current  = float(hist1m["Close"].iloc[-1])
+    diff_pct = (current / op_price - 1) * 100 if op_price > 0 else 0.0
+
+    if current > op_price:
+        bias, score = "LONG", 80.0
+    elif current < op_price:
+        bias, score = "SHORT", 20.0
+    else:
+        bias, score = "NEUTRAL", 50.0
+
+    return score, {
+        "opening_print": round(op_price, 2),
+        "current":       round(current, 2),
+        "op_bias":       bias,
+        "diff_pct":      round(diff_pct, 3),
+    }
+
+
 # ── Main scoring entry point ─────────────────────────────────────────────────
 
 def _score_ticker(ticker: str) -> dict:
@@ -315,19 +357,21 @@ def _score_ticker(ticker: str) -> dict:
         info = {}
 
     # Individual scores
-    tech_score, tech_det = _score_technical(hist)
-    fund_score, fund_det = _score_fundamental(info)
-    mom_score,  mom_det  = _score_momentum(info, hist)
+    tech_score,  tech_det  = _score_technical(hist)
+    fund_score,  fund_det  = _score_fundamental(info)
+    mom_score,   mom_det   = _score_momentum(info, hist)
     ema5m_score, ema5m_det = _score_ema5m(ticker)
+    op_score,    op_det    = _opening_print_bias(ticker)
 
-    # Weighted composite
-    composite = (
-        tech_score  * 0.35 +
-        fund_score  * 0.25 +
-        mom_score   * 0.25 +
-        ema5m_score * 0.15
+    # Weighted composite (tech:0.30 · fund:0.22 · mom:0.22 · ema5m:0.11 · op_bias:0.15)
+    composite = round(
+        tech_score  * 0.30 +
+        fund_score  * 0.22 +
+        mom_score   * 0.22 +
+        ema5m_score * 0.11 +
+        op_score    * 0.15,
+        1
     )
-    composite = round(composite, 1)
 
     if composite >= 65:
         decision = "BUY"
@@ -342,10 +386,11 @@ def _score_ticker(ticker: str) -> dict:
         "score":    composite,
         "error":    None,
         "breakdown": {
-            "technical":   {"score": tech_score,  **tech_det},
-            "fundamental": {"score": fund_score,  **fund_det},
-            "momentum":    {"score": mom_score,   **mom_det},
-            "ema5m":       {"score": ema5m_score, **ema5m_det},
+            "technical":    {"score": tech_score,  **tech_det},
+            "fundamental":  {"score": fund_score,  **fund_det},
+            "momentum":     {"score": mom_score,   **mom_det},
+            "ema5m":        {"score": ema5m_score, **ema5m_det},
+            "opening_print": {"score": op_score,   **op_det},
         },
     }
 
@@ -393,11 +438,13 @@ def main() -> None:
             score_str = f"score={r['score']:.0f}"
             bd = r["breakdown"]
             stack = bd["ema5m"].get("stack", "?")
+            op_bias = bd["opening_print"].get("op_bias", "?")
             detail_str = (
                 f"  tech={bd['technical']['score']:.0f}"
                 f"  fund={bd['fundamental']['score']:.0f}"
                 f"  mom={bd['momentum']['score']:.0f}"
                 f"  5m={bd['ema5m']['score']:.0f}({stack})"
+                f"  op={op_bias}"
             )
             print(f"→ {r['decision']:<4}  {score_str}{detail_str if args.verbose else ''}")
 
@@ -407,14 +454,15 @@ def main() -> None:
     qqq_bias = _aggregate(results)
 
     print("\n" + "=" * 60)
-    print(f"{'Ticker':<8} {'Decision':<8} {'Score':>5}  {'Tech':>4} {'Fund':>4} {'Mom':>4} {'5mEMA':>5}  {'Stack'}")
-    print("-" * 62)
+    print(f"{'Ticker':<8} {'Decision':<8} {'Score':>5}  {'Tech':>4} {'Fund':>4} {'Mom':>4} {'5mEMA':>5} {'OP':>5}  {'Stack':<12} OP Bias")
+    print("-" * 74)
     for r in results:
         if r["error"]:
             print(f"{r['ticker']:<8} {'ERROR':<8}")
         else:
             bd = r["breakdown"]
-            stack = bd["ema5m"].get("stack", "?")
+            stack  = bd["ema5m"].get("stack", "?")
+            op_bias = bd["opening_print"].get("op_bias", "?")
             marker = " ★" if r["decision"] in ("BUY", "SELL") else ""
             print(
                 f"{r['ticker']:<8} {r['decision']:<8} {r['score']:>5.0f}"
@@ -422,7 +470,8 @@ def main() -> None:
                 f" {bd['fundamental']['score']:>4.0f}"
                 f" {bd['momentum']['score']:>4.0f}"
                 f" {bd['ema5m']['score']:>5.0f}"
-                f"  {stack}{marker}"
+                f" {bd['opening_print']['score']:>5.0f}"
+                f"  {stack:<12} {op_bias}{marker}"
             )
     print("=" * 60)
 
@@ -445,7 +494,7 @@ def main() -> None:
         "results":  results,
         "summary":  {"buy": buy_n, "sell": sell_n, "hold": hold_n, "error": err_n},
         "qqq_bias": qqq_bias,
-        "weights":  {"technical": 0.35, "fundamental": 0.25, "momentum": 0.25, "ema5m": 0.15},
+        "weights":  {"technical": 0.30, "fundamental": 0.22, "momentum": 0.22, "ema5m": 0.11, "opening_print": 0.15},
     }
     out_path.write_text(json.dumps(payload, indent=2))
     print(f"Saved → {out_path}")
